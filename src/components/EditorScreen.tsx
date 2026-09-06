@@ -248,21 +248,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         if (selectedTextId) {
           handleDuplicateText();
         } else if (selectedImageId) {
-          const img = imageLayers.find((i) => i.id === selectedImageId);
-          if (img) handleDuplicateImage(img);
+          handleDuplicateImage();
         } else if (selectedShapeId) {
-          const shape = shapeLayers.find((s) => s.id === selectedShapeId);
-          if (shape) {
-            pushHistory();
-            const copy: ShapeStampLayer = {
-              ...shape,
-              id: `shape-${Date.now()}`,
-              x: shape.x + 20,
-              y: shape.y + 20,
-            };
-            setShapeLayers((prev) => [...prev, copy]);
-            setSelectedShapeId(copy.id);
-          }
+          handleDuplicateShape();
         }
         return;
       }
@@ -329,9 +317,12 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     selectedImageId,
     selectedShapeId,
     editingTextId,
+    textLayers,
     imageLayers,
     shapeLayers,
     pushHistory,
+    boxWidth,
+    boxHeight,
   ]);
 
   // Gradient options: Expanded to full modern gradient freedom
@@ -519,19 +510,31 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   };
 
   // Duplicate text layer
-  const handleDuplicateText = (layer?: TextLayer) => {
-    const target = layer || textLayers.find((t) => t.id === selectedTextId);
-    if (!target) return;
+  const handleDuplicateText = (targetLayer?: TextLayer) => {
+    let target = targetLayer;
+    if (!target || typeof target !== 'object' || !('text' in target) || !('id' in target)) {
+      target = textLayers.find((t) => t.id === selectedTextId);
+    }
+    if (!target || !target.id) return;
+
     pushHistory();
     const newId = `text-${Date.now()}`;
     const clone: TextLayer = {
       ...target,
       id: newId,
-      x: Math.min(boxWidth - 40, target.x + 20),
-      y: Math.min(boxHeight - 40, target.y + 20),
+      text: typeof target.text === 'string' ? target.text : 'テキスト',
+      fontFamily: target.fontFamily || 'Noto Sans JP',
+      fontLabel: target.fontLabel || 'Noto Sans JP',
+      fontSize: typeof target.fontSize === 'number' ? target.fontSize : 32,
+      fontWeight: target.fontWeight || '700',
+      color: target.color || '#FFFFFF',
+      x: Math.min(boxWidth - 40, (target.x ?? 100) + 20),
+      y: Math.min(boxHeight - 40, (target.y ?? 100) + 20),
     };
     setTextLayers((prev) => [...prev, clone]);
     setSelectedTextId(newId);
+    setSelectedImageId(null);
+    setSelectedShapeId(null);
     setToastMessage('テキストを複製しました');
     setTimeout(() => setToastMessage(null), 1500);
   };
@@ -578,18 +581,49 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     }
   };
 
-  const handleDuplicateImage = (layer: ImageLayer) => {
+  const handleDuplicateImage = (targetLayer?: ImageLayer) => {
+    let target = targetLayer;
+    if (!target || typeof target !== 'object' || !('src' in target) || !('id' in target)) {
+      target = imageLayers.find((img) => img.id === selectedImageId);
+    }
+    if (!target || !target.id) return;
+
     pushHistory();
     const newId = `img-${Date.now()}`;
     const clone: ImageLayer = {
-      ...layer,
+      ...target,
       id: newId,
-      x: Math.min(boxWidth - 40, layer.x + 20),
-      y: Math.min(boxHeight - 40, layer.y + 20),
+      x: Math.min(boxWidth - 40, (target.x ?? 100) + 20),
+      y: Math.min(boxHeight - 40, (target.y ?? 100) + 20),
     };
     setImageLayers((prev) => [...prev, clone]);
     setSelectedImageId(newId);
+    setSelectedTextId(null);
+    setSelectedShapeId(null);
     setToastMessage('画像を複製しました');
+    setTimeout(() => setToastMessage(null), 1500);
+  };
+
+  const handleDuplicateShape = (targetLayer?: ShapeStampLayer) => {
+    let target = targetLayer;
+    if (!target || typeof target !== 'object' || !('fillColor' in target) || !('id' in target)) {
+      target = shapeLayers.find((s) => s.id === selectedShapeId);
+    }
+    if (!target || !target.id) return;
+
+    pushHistory();
+    const newId = `shape-${Date.now()}`;
+    const clone: ShapeStampLayer = {
+      ...target,
+      id: newId,
+      x: Math.min(boxWidth - 40, (target.x ?? 100) + 20),
+      y: Math.min(boxHeight - 40, (target.y ?? 100) + 20),
+    };
+    setShapeLayers((prev) => [...prev, clone]);
+    setSelectedShapeId(newId);
+    setSelectedTextId(null);
+    setSelectedImageId(null);
+    setToastMessage('バッジを複製しました');
     setTimeout(() => setToastMessage(null), 1500);
   };
 
@@ -1740,6 +1774,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                   onDeleteImage={handleDeleteImage}
                   onDeleteShape={handleDeleteShape}
                   onDuplicateImage={handleDuplicateImage}
+                  onDuplicateShape={handleDuplicateShape}
                 />
               )}
 
@@ -1960,17 +1995,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       onAlignVerticalCenter={handleAlignVerticalCenter}
                       onBringForward={handleBringForward}
                       onSendBackward={handleSendBackward}
-                      onDuplicate={() => {
-                        pushHistory();
-                        const copy: ShapeStampLayer = {
-                          ...layer,
-                          id: `shape-${Date.now()}`,
-                          x: Math.min(boxWidth - 40, layer.x + 20),
-                          y: Math.min(boxHeight - 40, layer.y + 20),
-                        };
-                        setShapeLayers((prev) => [...prev, copy]);
-                        setSelectedShapeId(copy.id);
-                      }}
+                      onDuplicate={() => handleDuplicateShape(layer)}
                       onDelete={() => handleDeleteShape(layer.id)}
                       onQuickSizeChange={(delta) => handleQuickSizeChange(delta)}
                     >
@@ -2013,13 +2038,15 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     : null;
                   const isGradientText = !!gradPreset;
 
-                  const textLen = Math.max(1, layer.text.length);
+                  const textVal = layer.text || '';
+                  const textLen = Math.max(1, textVal.length);
+                  const layerFontSize = typeof layer.fontSize === 'number' ? layer.fontSize : 32;
                   const approxW = layer.isVertical
-                    ? Math.max(34, Math.round(layer.fontSize * 1.3))
-                    : Math.max(50, Math.round(layer.fontSize * (textLen * 0.72 + 0.5)));
+                    ? Math.max(34, Math.round(layerFontSize * 1.3))
+                    : Math.max(50, Math.round(layerFontSize * (textLen * 0.72 + 0.5)));
                   const approxH = layer.isVertical
-                    ? Math.max(50, Math.round(layer.fontSize * (textLen * 0.72 + 0.5)))
-                    : Math.max(30, Math.round(layer.fontSize * 1.3));
+                    ? Math.max(50, Math.round(layerFontSize * (textLen * 0.72 + 0.5)))
+                    : Math.max(30, Math.round(layerFontSize * 1.3));
 
                   return (
                     <CanvasTransformBox
@@ -2033,7 +2060,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       boxWidth={boxWidth}
                       boxHeight={boxHeight}
                       type="text"
-                      fontSize={layer.fontSize}
+                      fontSize={layerFontSize}
                       onResize={(_w, _h, newFontSize) => {
                         if (newFontSize) {
                           setTextLayers((prev) =>
@@ -2050,7 +2077,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       onAlignVerticalCenter={handleAlignVerticalCenter}
                       onBringForward={handleBringForward}
                       onSendBackward={handleSendBackward}
-                      onDuplicate={handleDuplicateText}
+                      onDuplicate={() => handleDuplicateText(layer)}
                       onDelete={() => handleDeleteText(layer.id)}
                       onQuickSizeChange={(delta) => handleQuickSizeChange(delta)}
                       onEditInline={() => setEditingTextId(layer.id)}
@@ -2091,7 +2118,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                             <input
                               type="text"
                               autoFocus
-                              value={layer.text}
+                              value={layer.text || ''}
                               onBlur={() => setEditingTextId(null)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') setEditingTextId(null);
@@ -2104,9 +2131,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                               }}
                               className="bg-transparent border-none outline-none text-center min-w-[60px]"
                               style={{
-                                fontFamily: `"${layer.fontFamily}", sans-serif`,
-                                color: layer.color,
-                                fontSize: `${layer.fontSize}px`,
+                                fontFamily: `"${layer.fontFamily || 'Noto Sans JP'}", sans-serif`,
+                                color: layer.color || '#FFFFFF',
+                                fontSize: `${layerFontSize}px`,
                                 fontWeight: layer.fontWeight || '700',
                               }}
                             />
@@ -2115,7 +2142,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                               onDoubleClick={() => setEditingTextId(layer.id)}
                               className="whitespace-nowrap tracking-tight pointer-events-none"
                             >
-                              {layer.text}
+                              {layer.text || ''}
                             </div>
                           )}
                         </span>

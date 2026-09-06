@@ -166,7 +166,11 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
             {onQuickSizeChange && (
               <button
                 type="button"
-                onClick={() => onQuickSizeChange(-1)}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onQuickSizeChange(-1);
+                }}
                 className="w-6 h-6 rounded-full hover:bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] flex items-center justify-center cursor-pointer transition"
                 title={type === 'text' ? '文字サイズ縮小' : 'サイズ縮小'}
               >
@@ -185,7 +189,11 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
             {onQuickSizeChange && (
               <button
                 type="button"
-                onClick={() => onQuickSizeChange(1)}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onQuickSizeChange(1);
+                }}
                 className="w-6 h-6 rounded-full hover:bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] flex items-center justify-center cursor-pointer transition"
                 title={type === 'text' ? '文字サイズ拡大' : 'サイズ拡大'}
               >
@@ -199,7 +207,11 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
             {onAlignHorizontalCenter && (
               <button
                 type="button"
-                onClick={onAlignHorizontalCenter}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAlignHorizontalCenter();
+                }}
                 className="w-6 h-6 rounded-full hover:bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] flex items-center justify-center cursor-pointer transition"
                 title="水平中央に配置"
               >
@@ -211,7 +223,11 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
             {onAlignVerticalCenter && (
               <button
                 type="button"
-                onClick={onAlignVerticalCenter}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAlignVerticalCenter();
+                }}
                 className="w-6 h-6 rounded-full hover:bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] flex items-center justify-center cursor-pointer transition"
                 title="垂直中央に配置"
               >
@@ -225,7 +241,11 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
             {onBringForward && (
               <button
                 type="button"
-                onClick={onBringForward}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onBringForward();
+                }}
                 className="w-6 h-6 rounded-full hover:bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] flex items-center justify-center cursor-pointer transition"
                 title="前面へ"
               >
@@ -235,7 +255,11 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
             {onSendBackward && (
               <button
                 type="button"
-                onClick={onSendBackward}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSendBackward();
+                }}
                 className="w-6 h-6 rounded-full hover:bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] flex items-center justify-center cursor-pointer transition"
                 title="背面へ"
               >
@@ -247,7 +271,11 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
             {type === 'text' && onEditInline && (
               <button
                 type="button"
-                onClick={onEditInline}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditInline();
+                }}
                 className="w-6 h-6 rounded-full hover:bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-primary)] flex items-center justify-center cursor-pointer transition"
                 title="文字を編集"
               >
@@ -259,7 +287,11 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
             {onDuplicate && (
               <button
                 type="button"
-                onClick={onDuplicate}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDuplicate();
+                }}
                 className="w-6 h-6 rounded-full hover:bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] flex items-center justify-center cursor-pointer transition"
                 title="複製 (Ctrl+D)"
               >
@@ -271,7 +303,11 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
             {onDelete && (
               <button
                 type="button"
-                onClick={onDelete}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
                 className="w-6 h-6 rounded-full hover:bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-error)] flex items-center justify-center cursor-pointer transition"
                 title="削除 (Del / Backspace)"
               >

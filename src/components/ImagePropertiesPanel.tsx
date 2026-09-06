@@ -18,6 +18,7 @@ interface ImagePropertiesPanelProps {
   onDeleteImage: (id: string) => void;
   onDeleteShape: (id: string) => void;
   onDuplicateImage: (layer: ImageLayer) => void;
+  onDuplicateShape?: (layer: ShapeStampLayer) => void;
 }
 
 export const ImagePropertiesPanel: React.FC<ImagePropertiesPanelProps> = ({
@@ -35,6 +36,7 @@ export const ImagePropertiesPanel: React.FC<ImagePropertiesPanelProps> = ({
   onDeleteImage,
   onDeleteShape,
   onDuplicateImage,
+  onDuplicateShape,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -350,14 +352,26 @@ export const ImagePropertiesPanel: React.FC<ImagePropertiesPanelProps> = ({
             <span className="text-[11px] font-bold text-[var(--md-sys-color-on-surface)]">
               バッジ・スタンプ設定
             </span>
-            <button
-              type="button"
-              onClick={() => onDeleteShape(selectedShape.id)}
-              className="p-1 rounded bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-error)] hover:opacity-90 cursor-pointer"
-              title="削除"
-            >
-              <M3Icon name="delete" size={14} />
-            </button>
+            <div className="flex items-center gap-1">
+              {onDuplicateShape && (
+                <button
+                  type="button"
+                  onClick={() => onDuplicateShape(selectedShape)}
+                  className="p-1 rounded bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)] hover:text-[var(--md-sys-color-primary)] cursor-pointer"
+                  title="複製"
+                >
+                  <M3Icon name="content_copy" size={14} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onDeleteShape(selectedShape.id)}
+                className="p-1 rounded bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-error)] hover:opacity-90 cursor-pointer"
+                title="削除"
+              >
+                <M3Icon name="delete" size={14} />
+              </button>
+            </div>
           </div>
 
           {/* Stamp Text */}
