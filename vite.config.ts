@@ -5,7 +5,9 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: '/GURADEKO/',
+    // Cloudflare Pages (ルート配下) やGitHub Pages (サブディレクトリ) など、どのホスティング環境でも動作するように
+    // BASE_PATH環境変数があれば優先し、デフォルトは相対パス './' に設定
+    base: process.env.BASE_PATH || './',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
