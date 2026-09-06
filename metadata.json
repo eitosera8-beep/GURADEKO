@@ -1,0 +1,6 @@
+{
+  "name": "グラデコ (Gradeco)",
+  "description": "Material 3 Expressive のデザインを採用した、直感的にグラデーションやデザインを作成・編集できるWebアプリケーション。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
