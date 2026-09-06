@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Palette } from 'lucide-react';
 import { NavigationRail } from './NavigationRail';
 import { M3Button } from './M3Button';
 import { M3Icon } from './M3Icon';
@@ -157,13 +158,41 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {/* Tab 1: ホーム (Home) */}
         {activeTab === 'home' && (
           <div className="flex-1 flex flex-col items-center justify-center p-8 max-w-5xl mx-auto w-full">
-            {/* Center Area: Extended FAB (tonal) with "新規作成" and edit icon */}
+            {/* Center Area: Brand Header, Extended FAB with "新規作成", and Description */}
             <div className="flex flex-col items-center justify-center my-auto text-center w-full">
+              {/* Tasteful Brand Display */}
+              <motion.div
+                id="brand-header"
+                initial={{ opacity: 0, y: -16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                className="flex flex-col items-center select-none mb-7"
+              >
+                <div className="flex items-center gap-3.5 mb-2">
+                  <div
+                    id="brand-logo-badge"
+                    className="w-11 h-11 rounded-[14px] bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] flex items-center justify-center shadow-sm"
+                  >
+                    <Palette className="w-6 h-6 stroke-[2.2]" />
+                  </div>
+                  <h1
+                    id="brand-title"
+                    className="text-5xl sm:text-6xl font-extrabold tracking-[-0.035em] text-[var(--md-sys-color-on-surface)]"
+                    style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+                  >
+                    Gradeco
+                  </h1>
+                </div>
+                <p className="text-[13px] font-medium text-[var(--md-sys-color-on-surface-variant)] tracking-wide">
+                  Gradient & Typography Decoration Studio
+                </p>
+              </motion.div>
+
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.3 }}
-                className="mb-6"
+                transition={{ duration: 0.3, delay: 0.1 }}
+                className="mb-5"
               >
                 <M3Button
                   id="btn-new-create"
