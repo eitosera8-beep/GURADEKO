@@ -2,7 +2,28 @@ export type ScreenMode = 'home' | 'create' | 'editor';
 
 export type NavigationTab = 'home' | 'search' | 'favorite' | 'settings';
 
-export type ExportFormat = 'png' | 'jpg' | 'svg';
+export type CreationType = 'image' | 'video';
+
+export type VideoFormat = 'mp4' | 'webm' | 'gif';
+
+export type ExportFormat = 'png' | 'jpg' | 'svg' | 'mp4' | 'webm' | 'gif';
+
+export type VideoMotionStyle =
+  | 'aurora'       // オーロラウェーブ
+  | 'pulse'        // グラデーションパルス
+  | 'colorCycle'   // カラーサイクル
+  | 'drift'        // スロードリフト
+  | 'neonFlow'     // ネオンフロー
+  | 'zoomGlow';    // ズーム＆グロー
+
+export interface VideoConfig {
+  duration: number; // 3, 5, 10, 15 (seconds)
+  fps: number;      // 30 or 60
+  motionStyle: VideoMotionStyle;
+  speed: number;    // 0.5, 1, 1.5, 2
+  format: VideoFormat;
+  aspectPreset?: '9:16' | '16:9' | '1:1' | '4:5';
+}
 
 export type GradientType =
   | 'single'
@@ -103,6 +124,10 @@ export interface CanvasConfig {
   fileFormat: ExportFormat;
   isGenki: boolean;       // '元気ですか？'
 
+  // Creation Type: 'image' (still graphic) | 'video' (animated motion reel)
+  creationType?: CreationType;
+  videoConfig?: VideoConfig;
+
   // Canvas Frame & Aspect Ratio
   aspectRatio?: '16:9' | '1:1' | '9:16' | '4:3' | 'custom';
   frameBorderWidth?: number; // 枠線の太さ (0 - 24px)
@@ -124,6 +149,7 @@ export interface GradientState {
   stops?: ColorStop[];
   filters?: GradientFilterConfig;
   isAnimated?: boolean;
+  videoMotion?: VideoMotionStyle;
 }
 
 export interface EditorSnapshot {

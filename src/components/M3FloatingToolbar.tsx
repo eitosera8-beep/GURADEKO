@@ -27,7 +27,7 @@ export const M3FloatingToolbar: React.FC<M3FloatingToolbarProps> = ({
 
   return (
     <div
-      className={`h-[64px] px-2 rounded-full shadow-md flex items-center justify-center gap-1 border border-[var(--md-sys-color-outline-variant)]/30 ${bgClass} ${className}`}
+      className={`h-[36px] sm:h-[40px] px-1 sm:px-1.5 rounded-full shadow-2xs sm:shadow-xs flex items-center justify-center gap-0.5 border border-[var(--md-sys-color-outline-variant)]/30 ${bgClass} ${className}`}
     >
       {items.map((item, idx) => (
         <motion.button
@@ -39,13 +39,13 @@ export const M3FloatingToolbar: React.FC<M3FloatingToolbarProps> = ({
           disabled={item.disabled}
           title={item.label}
           aria-label={item.label}
-          className={`w-[48px] h-[48px] rounded-full flex items-center justify-center cursor-pointer transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-sys-color-primary)] disabled:opacity-30 disabled:cursor-not-allowed ${
+          className={`w-[28px] sm:w-[32px] h-[28px] sm:h-[32px] rounded-full flex items-center justify-center cursor-pointer transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-sys-color-primary)] disabled:opacity-30 disabled:cursor-not-allowed ${
             item.disabled
               ? ''
               : 'hover:bg-[var(--md-sys-color-surface-container-high)]/60 active:bg-[var(--md-sys-color-secondary-container)]'
           }`}
         >
-          <M3Icon name={item.icon} size={24} />
+          <M3Icon name={item.icon} size={18} />
         </motion.button>
       ))}
     </div>

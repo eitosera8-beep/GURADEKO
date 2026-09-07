@@ -128,3 +128,80 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--md-sys-color-outline);
 }
+
+/* Video Motion Keyframes */
+@keyframes gradeco-aurora {
+  0% {
+    filter: hue-rotate(0deg) saturate(100%);
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    filter: hue-rotate(45deg) saturate(125%);
+    transform: scale(1.04) rotate(1deg);
+  }
+  100% {
+    filter: hue-rotate(-30deg) saturate(110%);
+    transform: scale(1.01) rotate(-1deg);
+  }
+}
+
+@keyframes gradeco-pulse {
+  0%, 100% {
+    filter: brightness(100%) contrast(100%);
+    transform: scale(1);
+  }
+  50% {
+    filter: brightness(115%) contrast(110%);
+    transform: scale(1.03);
+  }
+}
+
+@keyframes gradeco-color-cycle {
+  0% {
+    filter: hue-rotate(0deg);
+  }
+  100% {
+    filter: hue-rotate(360deg);
+  }
+}
+
+@keyframes gradeco-neon-flow {
+  0% {
+    background-position: 0% 50%;
+    filter: brightness(100%);
+  }
+  50% {
+    background-position: 100% 50%;
+    filter: brightness(115%);
+  }
+  100% {
+    background-position: 0% 50%;
+    filter: brightness(100%);
+  }
+}
+
+@keyframes gradeco-drift {
+  0% {
+    filter: hue-rotate(0deg);
+    transform: rotate(0deg) scale(1.02);
+  }
+  50% {
+    transform: rotate(2deg) scale(1.05);
+  }
+  100% {
+    filter: hue-rotate(180deg);
+    transform: rotate(0deg) scale(1.02);
+  }
+}
+
+@keyframes gradeco-zoom-glow {
+  0% {
+    filter: brightness(95%) contrast(100%);
+    transform: scale(1);
+  }
+  100% {
+    filter: brightness(120%) contrast(115%);
+    transform: scale(1.06);
+  }
+}
+

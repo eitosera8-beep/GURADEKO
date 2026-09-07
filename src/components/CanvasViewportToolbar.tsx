@@ -33,7 +33,7 @@ export const CanvasViewportToolbar: React.FC<CanvasViewportToolbarProps> = ({
   onRedo,
 }) => {
   return (
-    <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-full bg-[var(--md-sys-color-surface-container-highest)]/90 backdrop-blur-md border border-[var(--md-sys-color-outline-variant)]/40 shadow-sm text-xs text-[var(--md-sys-color-on-surface)] select-none">
+    <div className="flex items-center justify-between gap-1 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full bg-[var(--md-sys-color-surface-container-highest)]/90 backdrop-blur-md border border-[var(--md-sys-color-outline-variant)]/40 shadow-sm text-xs text-[var(--md-sys-color-on-surface)] select-none max-w-full overflow-x-auto">
       {/* Undo / Redo group */}
       <div className="flex items-center gap-0.5">
         <button

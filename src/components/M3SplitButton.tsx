@@ -51,11 +51,11 @@ export const M3SplitButton: React.FC<M3SplitButtonProps> = ({
           whileHover={{ opacity: 0.95 }}
           whileTap={{ scale: 0.98 }}
           onClick={onMainAction}
-          className={`h-[56px] pl-6 pr-5 flex items-center gap-3 bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] font-semibold text-[15px] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-[var(--md-sys-color-primary)] transition-all ${
-            isOpen ? 'rounded-full' : 'rounded-l-full rounded-r-[8px]'
+          className={`h-[34px] sm:h-[38px] pl-3 sm:pl-4 pr-2 sm:pr-3 flex items-center gap-1.5 sm:gap-2 bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] font-semibold text-[12px] sm:text-[13px] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-[var(--md-sys-color-primary)] transition-all whitespace-nowrap ${
+            isOpen ? 'rounded-full' : 'rounded-l-full rounded-r-[6px]'
           }`}
         >
-          {icon && <M3Icon name={icon} size={22} />}
+          {icon && <M3Icon name={icon} size={16} className="shrink-0" />}
           <span>{label}</span>
         </motion.button>
 
@@ -66,8 +66,8 @@ export const M3SplitButton: React.FC<M3SplitButtonProps> = ({
           whileTap={{ scale: 0.98 }}
           onClick={() => setIsOpen(!isOpen)}
           aria-expanded={isOpen}
-          className={`h-[56px] px-3 flex items-center justify-center bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-[var(--md-sys-color-primary)] transition-all ${
-            isOpen ? 'rounded-full' : 'rounded-r-full rounded-l-[8px]'
+          className={`h-[34px] sm:h-[38px] px-1.5 sm:px-2 flex items-center justify-center bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-[var(--md-sys-color-primary)] transition-all ${
+            isOpen ? 'rounded-full' : 'rounded-r-full rounded-l-[6px]'
           }`}
         >
           <motion.div
@@ -75,7 +75,7 @@ export const M3SplitButton: React.FC<M3SplitButtonProps> = ({
             transition={{ duration: 0.2 }}
             className="flex items-center justify-center"
           >
-            <M3Icon name="arrow_drop_down" size={24} />
+            <M3Icon name="arrow_drop_down" size={18} />
           </motion.div>
         </motion.button>
       </div>
@@ -88,7 +88,7 @@ export const M3SplitButton: React.FC<M3SplitButtonProps> = ({
             animate={{ opacity: 1, y: 4, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.96 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="absolute right-0 top-[100%] z-50 mt-2 w-64 rounded-[12px] bg-[var(--md-sys-color-surface-container)] shadow-xl border border-[var(--md-sys-color-outline-variant)]/40 py-2"
+            className="absolute right-0 top-[100%] z-50 mt-2 w-64 max-w-[90vw] rounded-[14px] bg-[var(--md-sys-color-surface-container)] shadow-xl border border-[var(--md-sys-color-outline-variant)]/40 py-2"
           >
             {menuItems.map((item, index) => (
               <button

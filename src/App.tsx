@@ -20,6 +20,15 @@ export default function App() {
     horizontalSize: 40,
     fileFormat: 'png',
     isGenki: false,
+    creationType: 'image',
+    videoConfig: {
+      duration: 5,
+      fps: 30,
+      motionStyle: 'aurora',
+      speed: 1,
+      format: 'mp4',
+      aspectPreset: '9:16',
+    },
   });
 
   // Navigation direction for reverse-playback transitions
@@ -69,8 +78,22 @@ export default function App() {
     window.history.pushState({ screen }, '');
   }, []);
 
-  const handleNavigateCreate = () => {
+  const handleNavigateCreate = (creationType: 'image' | 'video' = 'image') => {
     setActiveProject(null);
+    setCanvasConfig((prev) => ({
+      ...prev,
+      creationType,
+      fileFormat: creationType === 'video' ? 'mp4' : (prev.fileFormat === 'mp4' || prev.fileFormat === 'webm' || prev.fileFormat === 'gif' ? 'png' : prev.fileFormat),
+      aspectRatio: creationType === 'video' ? '9:16' : (prev.aspectRatio || 'custom'),
+      videoConfig: prev.videoConfig || {
+        duration: 5,
+        fps: 30,
+        motionStyle: 'aurora',
+        speed: 1,
+        format: 'mp4',
+        aspectPreset: '9:16',
+      },
+    }));
     navigateTo('create', 'forward');
   };
 

@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import {
   GradientState,
   GradientType,
@@ -6,8 +7,56 @@ import {
   ImageLayer,
   ShapeStampLayer,
   CanvasConfig,
+  VideoMotionStyle,
 } from '../types';
 import { TEXT_GRADIENT_PRESETS } from './designAssets';
+
+export const VIDEO_MOTION_PRESETS = [
+  { id: 'aurora', label: 'オーロラウェーブ', icon: 'auto_awesome', description: '色彩が波のように揺らめく' },
+  { id: 'pulse', label: 'グラデーションパルス', icon: 'favorite', description: '中心から脈打つように広がる' },
+  { id: 'colorCycle', label: 'カラーサイクル', icon: 'palette', description: '色が滑らかにスペクトル変化' },
+  { id: 'neonFlow', label: 'ネオンフロー', icon: 'water', description: '光の流れが左右にシフト' },
+  { id: 'drift', label: 'スロードリフト', icon: 'navigation', description: '角度がゆっくり360度回転' },
+  { id: 'zoomGlow', label: 'ズーム＆グロー', icon: 'flare', description: '輝きが拡縮して発光' },
+] as const;
+
+export function getVideoMotionStyle(
+  motionStyle: VideoMotionStyle = 'aurora',
+  speed = 1,
+  isPlaying = true
+): CSSProperties {
+  if (!isPlaying) return {};
+  const baseDuration = 8 / (speed || 1);
+  switch (motionStyle) {
+    case 'aurora':
+      return {
+        animation: `gradeco-aurora ${baseDuration}s ease-in-out infinite alternate`,
+      };
+    case 'pulse':
+      return {
+        animation: `gradeco-pulse ${baseDuration * 0.75}s ease-in-out infinite`,
+      };
+    case 'colorCycle':
+      return {
+        animation: `gradeco-color-cycle ${baseDuration * 1.2}s linear infinite`,
+      };
+    case 'neonFlow':
+      return {
+        backgroundSize: '200% 200%',
+        animation: `gradeco-neon-flow ${baseDuration}s ease infinite`,
+      };
+    case 'drift':
+      return {
+        animation: `gradeco-drift ${baseDuration * 1.5}s linear infinite`,
+      };
+    case 'zoomGlow':
+      return {
+        animation: `gradeco-zoom-glow ${baseDuration * 0.8}s ease-in-out infinite alternate`,
+      };
+    default:
+      return {};
+  }
+}
 
 export function getEffectiveStops(gradient: GradientState): ColorStop[] {
   if (gradient.stops && gradient.stops.length >= 2) {

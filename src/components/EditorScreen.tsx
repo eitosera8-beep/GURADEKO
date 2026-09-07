@@ -19,8 +19,18 @@ import {
   SavedProject,
   ColorStop,
   GradientFilterConfig,
+  VideoFormat,
+  VideoMotionStyle,
 } from '../types';
-import { getGradientCss, exportCanvasImage, getCssFilterString, getEffectiveStops } from '../utils/gradientUtils';
+import {
+  getGradientCss,
+  exportCanvasImage,
+  getCssFilterString,
+  getEffectiveStops,
+  VIDEO_MOTION_PRESETS,
+  getVideoMotionStyle,
+} from '../utils/gradientUtils';
+import { recordCanvasAnimation, downloadBlob } from '../utils/videoExport';
 import { GRADIENT_PRESETS, generateRandomGradient, GradientPreset } from '../utils/presets';
 import { saveProject } from '../services/db';
 import { GradientStopsBar } from './GradientStopsBar';
@@ -29,6 +39,7 @@ import { JAPANESE_FONTS, JapaneseFont, loadGoogleFont } from '../utils/japaneseF
 import { TextPropertiesPanel } from './TextPropertiesPanel';
 import { ImagePropertiesPanel } from './ImagePropertiesPanel';
 import { CanvasFramePanel } from './CanvasFramePanel';
+import { MotionPanel } from './MotionPanel';
 import { CanvasTransformBox } from './CanvasTransformBox';
 import { CanvasViewportToolbar } from './CanvasViewportToolbar';
 import { PRESET_STICKERS, PRESET_BADGES, TEXT_GRADIENT_PRESETS } from '../utils/designAssets';
@@ -49,8 +60,15 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     return initialProject?.snapshot?.canvasConfig || initialCanvasConfig;
   });
 
-  // Active Sidebar Tab: 'gradient' | 'stops' | 'text' | 'image' | 'canvas'
-  const [activeTab, setActiveTab] = useState<'gradient' | 'stops' | 'text' | 'image' | 'canvas'>('gradient');
+  // Active Sidebar Tab: 'gradient' | 'stops' | 'motion' | 'text' | 'image' | 'canvas'
+  const [activeTab, setActiveTab] = useState<'gradient' | 'stops' | 'motion' | 'text' | 'image' | 'canvas'>(() => {
+    return initialCanvasConfig?.creationType === 'video' ? 'motion' : 'gradient';
+  });
+
+  // Video playback & export state
+  const [isPlayingVideo, setIsPlayingVideo] = useState(true);
+  const [isExportingVideo, setIsExportingVideo] = useState(false);
+  const [videoExportProgress, setVideoExportProgress] = useState(0);
 
   // Core Gradient State
   const [gradient, setGradient] = useState<GradientState>(() => {
@@ -118,6 +136,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   // Font Picker Modal State
   const [showFontPicker, setShowFontPicker] = useState(false);
 
+  // Help Guide Dialog State
+  const [showHelpDialog, setShowHelpDialog] = useState(false);
+
   // History for Undo / Redo
   const [past, setPast] = useState<EditorSnapshot[]>([]);
   const [future, setFuture] = useState<EditorSnapshot[]>([]);
@@ -135,6 +156,8 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   const [activeGuideX, setActiveGuideX] = useState<number | null>(null);
   const [activeGuideY, setActiveGuideY] = useState<number | null>(null);
   const [isFullscreenPreview, setIsFullscreenPreview] = useState<boolean>(false);
+  // Mobile mode toggle: 'canvas' (preview) vs 'settings' (adjust panel)
+  const [mobileViewMode, setMobileViewMode] = useState<'canvas' | 'settings'>('canvas');
 
   const canvasBoxRef = useRef<HTMLDivElement>(null);
 
@@ -142,6 +165,16 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   // Base size requested: 576×416dp.
   const boxWidth = Math.round(576 * (canvasConfig.horizontalSize / 40));
   const boxHeight = Math.round(416 * (canvasConfig.verticalSize / 40));
+
+  // Auto-fit on mobile screens on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      const timer = setTimeout(() => {
+        handleZoomFit();
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Initialize stops if missing
   useEffect(() => {
@@ -220,6 +253,43 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     setToastMessage('やり直しました (Redo)');
     setTimeout(() => setToastMessage(null), 1800);
   }, [future, gradient, textLayers, imageLayers, shapeLayers, canvasConfig]);
+
+  // Determine active creation mode
+  const isVideo = canvasConfig.creationType === 'video';
+
+  // Toggle between Still Image and Video mode
+  const handleToggleCreationType = (targetType: 'image' | 'video') => {
+    pushHistory();
+    if (targetType === 'video') {
+      setCanvasConfig((prev) => ({
+        ...prev,
+        creationType: 'video',
+        fileFormat: 'mp4',
+        videoConfig: prev.videoConfig || {
+          duration: 5,
+          fps: 30,
+          motionStyle: 'aurora',
+          speed: 1,
+          format: 'mp4',
+          aspectPreset: '9:16',
+        },
+      }));
+      setActiveTab('motion');
+      setToastMessage('動画モードに切り替えました');
+    } else {
+      setCanvasConfig((prev) => ({
+        ...prev,
+        creationType: 'image',
+        fileFormat:
+          prev.fileFormat === 'mp4' || prev.fileFormat === 'webm' || prev.fileFormat === 'gif'
+            ? 'png'
+            : prev.fileFormat,
+      }));
+      setActiveTab('gradient');
+      setToastMessage('静止画モードに切り替えました');
+    }
+    setTimeout(() => setToastMessage(null), 2500);
+  };
 
   // Keyboard shortcut listener (Ctrl+Z, Ctrl+Y, Ctrl+D, Delete, Escape, Arrow nudges)
   useEffect(() => {
@@ -644,13 +714,15 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     if (canvasBoxRef.current) {
       const parent = canvasBoxRef.current.parentElement;
       if (parent) {
-        const availW = parent.clientWidth - 40;
-        const availH = parent.clientHeight - 40;
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+        const padding = isMobile ? 24 : 40;
+        const availW = Math.max(100, parent.clientWidth - padding);
+        const availH = Math.max(100, parent.clientHeight - padding);
         const scaleX = availW / boxWidth;
         const scaleY = availH / boxHeight;
-        const fit = Math.min(1.2, Math.max(0.35, Math.min(scaleX, scaleY)));
+        const fit = Math.min(1.2, Math.max(0.18, Math.min(scaleX, scaleY)));
         setZoomScale(Math.round(fit * 100) / 100);
-        setToastMessage(`キャンバスをフィットさせました (${Math.round(fit * 100)}%)`);
+        setToastMessage(`画面にフィット (${Math.round(fit * 100)}%)`);
         setTimeout(() => setToastMessage(null), 1500);
         return;
       }
@@ -898,6 +970,125 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
       setToastMessage('ダウンロード処理でエラーが発生しました');
     } finally {
       setTimeout(() => setToastMessage(null), 2500);
+    }
+  };
+
+  // Video Export Action
+  const handleExportVideo = async (formatOverride?: 'mp4' | 'webm' | 'gif') => {
+    const format = formatOverride || canvasConfig.videoConfig?.format || 'mp4';
+    const duration = canvasConfig.videoConfig?.duration || 5;
+    const fps = canvasConfig.videoConfig?.fps || 30;
+    const motionStyle = canvasConfig.videoConfig?.motionStyle || 'aurora';
+    const speed = canvasConfig.videoConfig?.speed || 1;
+
+    setIsExportingVideo(true);
+    setVideoExportProgress(0);
+
+    try {
+      const recCanvas = document.createElement('canvas');
+      const exportW = boxWidth * 2;
+      const exportH = boxHeight * 2;
+      recCanvas.width = exportW;
+      recCanvas.height = exportH;
+      const ctx = recCanvas.getContext('2d');
+      if (!ctx) throw new Error('Could not create canvas context');
+
+      const stops = getEffectiveStops(gradient);
+
+      const renderFrame = (progress: number) => {
+        let dynamicAngle = gradient.angle ?? 135;
+        let dynamicHue = 0;
+        let scalePulse = 1;
+
+        if (motionStyle === 'aurora') {
+          dynamicHue = Math.sin(progress * 2 * Math.PI) * 45;
+          dynamicAngle += Math.cos(progress * 2 * Math.PI) * 20;
+        } else if (motionStyle === 'pulse') {
+          scalePulse = 1 + Math.sin(progress * 2 * Math.PI) * 0.05;
+        } else if (motionStyle === 'colorCycle') {
+          dynamicHue = progress * 360;
+        } else if (motionStyle === 'drift') {
+          dynamicAngle += progress * 360;
+        } else if (motionStyle === 'neonFlow') {
+          dynamicHue = Math.sin(progress * Math.PI) * 30;
+        } else if (motionStyle === 'zoomGlow') {
+          scalePulse = 1 + Math.sin(progress * 2 * Math.PI) * 0.08;
+        }
+
+        ctx.save();
+        ctx.clearRect(0, 0, exportW, exportH);
+
+        const filterParts: string[] = [];
+        if (dynamicHue !== 0) {
+          filterParts.push(`hue-rotate(${dynamicHue}deg)`);
+        }
+        if (gradient.filters?.brightness && gradient.filters.brightness !== 100) filterParts.push(`brightness(${gradient.filters.brightness}%)`);
+        if (gradient.filters?.contrast && gradient.filters.contrast !== 100) filterParts.push(`contrast(${gradient.filters.contrast}%)`);
+        if (gradient.filters?.saturation && gradient.filters.saturation !== 100) filterParts.push(`saturate(${gradient.filters.saturation}%)`);
+        ctx.filter = filterParts.length > 0 ? filterParts.join(' ') : 'none';
+
+        const rad = (dynamicAngle * Math.PI) / 180;
+        const halfDiag = (Math.sqrt(exportW * exportW + exportH * exportH) / 2) * scalePulse;
+        const cx = exportW / 2;
+        const cy = exportH / 2;
+        const x1 = cx - Math.cos(rad) * halfDiag;
+        const y1 = cy - Math.sin(rad) * halfDiag;
+        const x2 = cx + Math.cos(rad) * halfDiag;
+        const y2 = cy + Math.sin(rad) * halfDiag;
+
+        const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+        stops.forEach((s) => grad.addColorStop(Math.min(1, Math.max(0, s.position / 100)), s.color));
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, exportW, exportH);
+
+        ctx.filter = 'none';
+
+        if (canvasConfig.frameBorderWidth && canvasConfig.frameBorderWidth > 0) {
+          ctx.strokeStyle = canvasConfig.frameBorderColor || '#FFFFFF';
+          ctx.lineWidth = canvasConfig.frameBorderWidth * 2;
+          ctx.strokeRect(0, 0, exportW, exportH);
+        }
+
+        const scaleX = exportW / boxWidth;
+        const scaleY = exportH / boxHeight;
+        for (const t of textLayers) {
+          ctx.save();
+          ctx.translate(t.x * scaleX, t.y * scaleY);
+          if (t.rotation) ctx.rotate((t.rotation * Math.PI) / 180);
+          ctx.font = `${t.fontWeight || '700'} ${t.fontSize * scaleX}px '${t.fontFamily || 'Noto Sans JP'}', sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          if (t.hasShadow !== false) {
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowBlur = 8 * scaleX;
+            ctx.shadowOffsetY = 3 * scaleY;
+          }
+          ctx.fillStyle = t.color || '#FFFFFF';
+          ctx.fillText(t.text, 0, 0);
+          ctx.restore();
+        }
+
+        ctx.restore();
+      };
+
+      const result = await recordCanvasAnimation(recCanvas, {
+        durationSeconds: duration,
+        fps,
+        format,
+        width: exportW,
+        height: exportH,
+        renderFrame,
+        onProgress: (p) => setVideoExportProgress(p),
+      });
+
+      downloadBlob(result.blob, `gradeco-motion-${Date.now()}.${result.extension}`);
+      setToastMessage(`動画 (${result.extension.toUpperCase()}) を書き出しました`);
+    } catch (err) {
+      console.error(err);
+      setToastMessage('動画の書き出しに失敗しました');
+    } finally {
+      setIsExportingVideo(false);
+      setTimeout(() => setToastMessage(null), 3000);
     }
   };
 
@@ -1336,22 +1527,142 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         onSelectFont={handleSelectFont}
       />
 
-      {/* COMPACT HEADER: Sleek, proportional, slightly smaller */}
-      <header className="w-full px-5 py-2 flex items-center justify-between shrink-0 z-30 border-b border-[var(--md-sys-color-outline-variant)]/20 bg-[var(--md-sys-color-surface)]">
-        <div className="flex items-center gap-3">
-          <M3LoadingIndicator size={28} withContainer />
+      {/* Help Guide Modal */}
+      <M3Dialog
+        isOpen={showHelpDialog}
+        onClose={() => setShowHelpDialog(false)}
+        title="グラデコ 使い方ガイド"
+      >
+        <div className="flex flex-col gap-3 max-h-[70vh] overflow-y-auto pr-1 text-[var(--md-sys-color-on-surface)]">
+          {/* Section 1: 静止画と動画の切り替え */}
+          <div className="p-3 rounded-[16px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/30">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 flex items-center justify-center text-xs font-bold shrink-0">
+                1
+              </span>
+              <h4 className="text-[14px] font-bold">静止画モードと動画モードの違い</h4>
+            </div>
+            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)] leading-relaxed mb-2">
+              いつでも操作パネル上部の切り替えボタンからワンクリックで切り替えられます。
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div className="p-2.5 rounded-[12px] bg-[var(--md-sys-color-surface)] border border-blue-200 dark:border-blue-900/50">
+                <span className="font-bold text-blue-600 dark:text-blue-400 block mb-0.5">📷 静止画モード</span>
+                <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] leading-normal">
+                  SNSアイコン、YouTubeサムネイル、Webバナーなどに最適。PNG・JPG・SVGで高画質保存。
+                </span>
+              </div>
+              <div className="p-2.5 rounded-[12px] bg-[var(--md-sys-color-surface)] border border-purple-200 dark:border-purple-900/50">
+                <span className="font-bold text-purple-600 dark:text-purple-400 block mb-0.5">🎥 動画モード</span>
+                <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] leading-normal">
+                  TikTokやリール、Shortsに使える動く背景。オーロラなどの動きを選びMP4やGIFで出力。
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: グラデーションの作り方 */}
+          <div className="p-3 rounded-[16px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/30">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold shrink-0">
+                2
+              </span>
+              <h4 className="text-[14px] font-bold">グラデーションの調整</h4>
+            </div>
+            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)] leading-relaxed">
+              <strong>「配色」</strong>タブで線形や放射状などの種類と基本色を選びます。<strong>「ストップ」</strong>タブでは色の分岐点を追加したり、スライダーで位置をスライドさせて滑らかな色の重なりを作れます。「プリセット」ボタンから美しい配色例をワンクリックで選ぶこともできます。
+            </p>
+          </div>
+
+          {/* Section 3: 文字や素材の自由な配置 */}
+          <div className="p-3 rounded-[16px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/30">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-xs font-bold shrink-0">
+                3
+              </span>
+              <h4 className="text-[14px] font-bold">文字と素材の配置・編集</h4>
+            </div>
+            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)] leading-relaxed mb-1.5">
+              <strong>「文字」</strong>や<strong>「素材」</strong>タブでテキストやスタンプを追加できます。
+            </p>
+            <ul className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] space-y-1 list-disc list-inside">
+              <li><strong>移動:</strong> キャンバス上の文字や素材を直接ドラッグ</li>
+              <li><strong>拡大・縮小:</strong> 要素の四隅にある白い丸ハンドルをドラッグ</li>
+              <li><strong>回転:</strong> 要素上部の回転ハンドルをドラッグ</li>
+              <li><strong>複製 / 削除:</strong> 要素を選んで「複製」「削除」ボタン、またはキーボードのDeleteキー</li>
+            </ul>
+          </div>
+
+          {/* Section 4: 保存・ダウンロード */}
+          <div className="p-3 rounded-[16px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/30">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 flex items-center justify-center text-xs font-bold shrink-0">
+                4
+              </span>
+              <h4 className="text-[14px] font-bold">保存・ダウンロード</h4>
+            </div>
+            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)] leading-relaxed">
+              画面右上の<strong>「画像保存」</strong>または<strong>「動画出力」</strong>ボタンを押すと、そのままダウンロードされます。右側の矢印メニューからMP4、WebM、GIF、PNG、JPG、SVG、CSSコードなどを目的に合わせて選ぶこともできます。
+            </p>
+          </div>
+
+          <div className="flex justify-end mt-1">
+            <M3Button variant="filled" onClick={() => setShowHelpDialog(false)}>
+              閉じる
+            </M3Button>
+          </div>
+        </div>
+      </M3Dialog>
+
+      {/* Video Export Progress Dialog */}
+      <M3Dialog
+        isOpen={isExportingVideo}
+        onClose={() => {}}
+        title="動画を書き出し中"
+      >
+        <div className="flex flex-col items-center justify-center p-4 gap-4 text-center">
+          <div className="w-14 h-14 rounded-full bg-[var(--md-sys-color-primary-container)] flex items-center justify-center text-[var(--md-sys-color-primary)]">
+            <M3Icon name="movie" size={30} />
+          </div>
+          <div className="w-full">
+            <h4 className="text-[15px] font-bold text-[var(--md-sys-color-on-surface)] mb-1">
+              動画フレームをレンダリングしています
+            </h4>
+            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)] mb-3">
+              {canvasConfig.videoConfig?.duration || 5}秒間のアニメーションを{(canvasConfig.videoConfig?.format || 'mp4').toUpperCase()}形式でエンコード中...
+            </p>
+            {/* Progress Bar */}
+            <div className="w-full h-2.5 bg-[var(--md-sys-color-surface-container-highest)] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[var(--md-sys-color-primary)] transition-all duration-150 rounded-full"
+                style={{ width: `${Math.round(videoExportProgress * 100)}%` }}
+              />
+            </div>
+            <span className="text-xs font-mono font-bold text-[var(--md-sys-color-primary)] mt-1.5 block">
+              {Math.round(videoExportProgress * 100)}% 完了
+            </span>
+          </div>
+        </div>
+      </M3Dialog>
+
+      {/* COMPACT HEADER: Responsive sleek layout */}
+      <header className="w-full h-[46px] sm:h-[50px] px-3 sm:px-4 py-1 flex items-center justify-between shrink-0 z-30 border-b border-[var(--md-sys-color-outline-variant)]/20 bg-[var(--md-sys-color-surface)]">
+        <div className="flex items-center gap-2">
+          <M3LoadingIndicator size={20} withContainer />
           <div>
-            <h1 className="text-[20px] font-black tracking-tight text-[var(--md-sys-color-on-surface)] leading-none">
-              グラデコ
-            </h1>
-            <span className="text-[10px] text-[var(--md-sys-color-on-surface-variant)] font-medium">
-              Gradeco Studio
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-[15px] sm:text-[17px] font-black tracking-tight text-[var(--md-sys-color-on-surface)] leading-none">
+                グラデコ
+              </h1>
+            </div>
+            <span className="hidden sm:inline text-[9px] text-[var(--md-sys-color-on-surface-variant)] font-medium">
+              {isVideo ? 'Gradeco Motion Video Studio' : 'Gradeco Static Graphic Studio'}
             </span>
           </div>
         </div>
 
         {/* Floating Toolbar */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           <M3FloatingToolbar
             variant="standard"
             items={[
@@ -1373,6 +1684,11 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 onClick: handleRedo,
               },
               {
+                icon: 'help_outline',
+                label: '使い方',
+                onClick: () => setShowHelpDialog(true),
+              },
+              {
                 icon: 'home',
                 label: 'ホーム',
                 onClick: onNavigateHome,
@@ -1381,11 +1697,11 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           />
 
           {/* Quick Zoom toggle for compact screens */}
-          <div className="hidden md:flex items-center bg-[var(--md-sys-color-surface-container)] rounded-full px-1.5 py-0.5 border border-[var(--md-sys-color-outline-variant)]/40 text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
+          <div className="hidden md:flex items-center bg-[var(--md-sys-color-surface-container)] rounded-full px-1.5 py-0.5 border border-[var(--md-sys-color-outline-variant)]/40 text-[10px] text-[var(--md-sys-color-on-surface-variant)]">
             <button
               type="button"
               onClick={() => setZoomScale((prev) => (prev === 1 ? 0.85 : 1))}
-              className="px-2 py-0.5 rounded-full hover:text-[var(--md-sys-color-primary)] font-mono font-medium cursor-pointer"
+              className="px-1.5 py-0.5 rounded-full hover:text-[var(--md-sys-color-primary)] font-mono font-medium cursor-pointer"
               title="表示倍率切替"
             >
               {Math.round(zoomScale * 100)}%
@@ -1394,51 +1710,147 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         </div>
 
         {/* Download & Export Split Button */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           <M3SplitButton
-            label={`ダウンロード (${canvasConfig.fileFormat.toUpperCase()})`}
-            icon="download"
-            onMainAction={() => handleDownload()}
-            menuItems={[
-              {
-                label: 'PNG 形式で保存',
-                icon: 'image',
-                description: '高精細ラスター形式 (2x HD)',
-                onClick: () => handleDownload('png'),
-              },
-              {
-                label: 'JPG 形式で保存',
-                icon: 'photo',
-                description: '標準Web画像形式',
-                onClick: () => handleDownload('jpg'),
-              },
-              {
-                label: 'SVG 形式で保存',
-                icon: 'draw',
-                description: 'ベクター形式（和文フォント対応）',
-                onClick: () => handleDownload('svg'),
-              },
-              {
-                label: 'CSSコードをコピー',
-                icon: 'content_copy',
-                description: 'background CSSをクリップボードへ',
-                onClick: handleCopyCss,
-              },
-              {
-                label: 'Tailwind クラスをコピー',
-                icon: 'code',
-                description: 'bg-[...] 形式でコピー',
-                onClick: handleCopyTailwind,
-              },
-            ]}
+            label={
+              isVideo
+                ? `動画出力 (${(canvasConfig.videoConfig?.format || 'mp4').toUpperCase()})`
+                : `画像保存 (${canvasConfig.fileFormat.toUpperCase()})`
+            }
+            icon={isVideo ? 'movie' : 'download'}
+            onMainAction={() => {
+              if (isVideo) {
+                handleExportVideo();
+              } else {
+                handleDownload();
+              }
+            }}
+            menuItems={
+              isVideo
+                ? [
+                    {
+                      label: 'MP4 形式で動画出力',
+                      icon: 'movie',
+                      description: '高品質動画 (Reels/Shorts/TikTok対応)',
+                      onClick: () => handleExportVideo('mp4'),
+                    },
+                    {
+                      label: 'WebM 形式で動画出力',
+                      icon: 'video_file',
+                      description: '軽量Web動画形式',
+                      onClick: () => handleExportVideo('webm'),
+                    },
+                    {
+                      label: 'GIF アニメーションで出力',
+                      icon: 'gif',
+                      description: 'ループアニメーション画像',
+                      onClick: () => handleExportVideo('gif'),
+                    },
+                    {
+                      label: '現在のフレームをPNG画像で保存',
+                      icon: 'image',
+                      description: '動画の現在フレームを高精細画像化',
+                      onClick: () => handleDownload('png'),
+                    },
+                    {
+                      label: 'CSSコードをコピー',
+                      icon: 'content_copy',
+                      description: 'background CSSをクリップボードへ',
+                      onClick: handleCopyCss,
+                    },
+                    {
+                      label: 'Tailwind クラスをコピー',
+                      icon: 'code',
+                      description: 'bg-[...] 形式でコピー',
+                      onClick: handleCopyTailwind,
+                    },
+                    {
+                      label: '静止画モードに切り替える',
+                      icon: 'image',
+                      description: '動きを解除して画像エディタへ',
+                      onClick: () => handleToggleCreationType('image'),
+                    },
+                  ]
+                : [
+                    {
+                      label: 'PNG 形式で保存',
+                      icon: 'image',
+                      description: '高精細ラスター形式 (2x HD)',
+                      onClick: () => handleDownload('png'),
+                    },
+                    {
+                      label: 'JPG 形式で保存',
+                      icon: 'photo',
+                      description: '標準Web画像形式',
+                      onClick: () => handleDownload('jpg'),
+                    },
+                    {
+                      label: 'SVG 形式で保存',
+                      icon: 'draw',
+                      description: 'ベクター形式（和文フォント対応）',
+                      onClick: () => handleDownload('svg'),
+                    },
+                    {
+                      label: 'CSSコードをコピー',
+                      icon: 'content_copy',
+                      description: 'background CSSをクリップボードへ',
+                      onClick: handleCopyCss,
+                    },
+                    {
+                      label: 'Tailwind クラスをコピー',
+                      icon: 'code',
+                      description: 'bg-[...] 形式でコピー',
+                      onClick: handleCopyTailwind,
+                    },
+                    {
+                      label: '動画モードに切り替える',
+                      icon: 'videocam',
+                      description: '動きをつけて動画として制作',
+                      onClick: () => handleToggleCreationType('video'),
+                    },
+                  ]
+            }
           />
         </div>
       </header>
 
+      {/* Mobile Mode Switcher (< lg) */}
+      <div className="flex lg:hidden items-center justify-center w-full px-3 py-1 bg-[var(--md-sys-color-surface-container-low)] border-b border-[var(--md-sys-color-outline-variant)]/20 shrink-0">
+        <div className="flex items-center p-0.5 bg-[var(--md-sys-color-surface-container)] rounded-full border border-[var(--md-sys-color-outline-variant)]/30 w-full max-w-[280px] shadow-2xs">
+          <button
+            type="button"
+            onClick={() => {
+              setMobileViewMode('canvas');
+              setTimeout(handleZoomFit, 100);
+            }}
+            className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+              mobileViewMode === 'canvas'
+                ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] shadow-xs'
+                : 'text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-on-surface)]'
+            }`}
+          >
+            <M3Icon name="visibility" size={14} />
+            <span>プレビュー</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileViewMode('settings')}
+            className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+              mobileViewMode === 'settings'
+                ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] shadow-xs'
+                : 'text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-on-surface)]'
+            }`}
+          >
+            <M3Icon name="tune" size={14} />
+            <span>調整パネル</span>
+          </button>
+        </div>
+      </div>
+
       {/* Main Workspace */}
       <main className="flex-1 flex items-center justify-center p-2 sm:p-4 overflow-auto">
         <div
-          className={`flex flex-col lg:flex-row items-center lg:items-start justify-center gap-4 mx-auto my-auto transition-all ${
+          className={`flex flex-col lg:flex-row items-center lg:items-start justify-center gap-3 sm:gap-4 mx-auto my-auto transition-all ${
             isFullscreenPreview ? 'max-w-4xl' : 'w-full max-w-[1180px]'
           }`}
         >
@@ -1446,7 +1858,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           {!isFullscreenPreview && (
             <div
               id="editor-controls-box"
-              className="w-full sm:w-[410px] h-[540px] lg:h-[620px] max-h-[82vh] bg-[var(--md-sys-color-surface-container)] rounded-[24px] p-4 flex flex-col justify-between shadow-sm border border-[var(--md-sys-color-outline-variant)]/30 shrink-0 overflow-y-auto"
+              className={`${
+                mobileViewMode === 'canvas' ? 'hidden lg:flex' : 'flex'
+              } w-full sm:w-[410px] h-[calc(100vh-130px)] sm:h-[540px] lg:h-[620px] max-h-[85vh] bg-[var(--md-sys-color-surface-container)] rounded-[24px] p-3.5 sm:p-4 flex-col justify-between shadow-sm border border-[var(--md-sys-color-outline-variant)]/30 shrink-0 overflow-y-auto`}
             >
             <div>
               {/* Box Top Header */}
@@ -1459,16 +1873,6 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => setShowPresetsDialog(true)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-primary)] text-xs font-semibold hover:opacity-90 transition cursor-pointer"
-                    title="プリセット一覧"
-                  >
-                    <M3Icon name="palette" size={14} />
-                    <span>プリセット</span>
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={handleRandomGradient}
                     className="p-1 rounded-full text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-primary)] hover:bg-[var(--md-sys-color-surface-container-high)] cursor-pointer"
                     title="ランダム生成"
@@ -1479,19 +1883,29 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               </div>
 
               {/* Navigation Tabs for Granular Control */}
-              <div className="flex items-center p-1 rounded-full bg-[var(--md-sys-color-surface-container-low)] mb-3 text-[11px] font-medium">
-                {[
-                  { id: 'gradient', label: '配色', icon: 'gradient' },
-                  { id: 'stops', label: 'ストップ', icon: 'palette' },
-                  { id: 'text', label: `文字 (${textLayers.length})`, icon: 'title' },
-                  { id: 'image', label: `画像 (${imageLayers.length + shapeLayers.length})`, icon: 'image' },
-                  { id: 'canvas', label: '枠・効果', icon: 'crop_free' },
-                ].map((tab) => (
+              <div className="flex items-center p-1 rounded-full bg-[var(--md-sys-color-surface-container-low)] mb-3 text-[11px] font-medium overflow-x-auto">
+                {(isVideo
+                  ? [
+                      { id: 'motion', label: '動画・動き', icon: 'movie' },
+                      { id: 'gradient', label: '配色', icon: 'gradient' },
+                      { id: 'stops', label: 'ストップ', icon: 'palette' },
+                      { id: 'text', label: `文字 (${textLayers.length})`, icon: 'title' },
+                      { id: 'image', label: `素材 (${imageLayers.length + shapeLayers.length})`, icon: 'image' },
+                      { id: 'canvas', label: '枠・設定', icon: 'crop_free' },
+                    ]
+                  : [
+                      { id: 'gradient', label: '配色', icon: 'gradient' },
+                      { id: 'stops', label: 'ストップ', icon: 'palette' },
+                      { id: 'text', label: `文字 (${textLayers.length})`, icon: 'title' },
+                      { id: 'image', label: `素材 (${imageLayers.length + shapeLayers.length})`, icon: 'image' },
+                      { id: 'canvas', label: '枠・効果', icon: 'crop_free' },
+                    ]
+                ).map((tab) => (
                   <button
                     key={tab.id}
                     type="button"
                     onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex-1 py-1 px-1 rounded-full flex items-center justify-center gap-0.5 transition-all cursor-pointer ${
+                    className={`flex-1 py-1 px-1 rounded-full flex items-center justify-center gap-0.5 transition-all cursor-pointer whitespace-nowrap ${
                       activeTab === tab.id
                         ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] shadow-2xs font-bold'
                         : 'text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-on-surface)]'
@@ -1506,6 +1920,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               {/* TAB 1: Gradient Types & Core Settings */}
               {activeTab === 'gradient' && (
                 <div className="flex flex-col gap-3">
+                  <p className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] -mt-1">
+                    グラデーションの種類（線形・放射状・円錐等）と角度・ベース色を調整します
+                  </p>
                   <M3Dropdown
                     id="dropdown-gradient-type"
                     label="グラデーションの種類"
@@ -1679,6 +2096,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               {/* TAB 2: Multi-Stop Color Bar & Harmonies */}
               {activeTab === 'stops' && (
                 <div className="flex flex-col gap-3">
+                  <p className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] -mt-1">
+                    色の分岐点（ストップ）を追加・スライド移動して、滑らかなグラデーション階調を作成します
+                  </p>
                   <GradientStopsBar
                     stops={effectiveStops}
                     onChangeStops={handleStopsChange}
@@ -1778,6 +2198,18 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 />
               )}
 
+              {/* TAB: Motion & Video Controls */}
+              {activeTab === 'motion' && (
+                <MotionPanel
+                  canvasConfig={canvasConfig}
+                  onUpdateCanvasConfig={(updates) => setCanvasConfig((prev) => ({ ...prev, ...updates }))}
+                  isPlaying={isPlayingVideo}
+                  onTogglePlay={() => setIsPlayingVideo((prev) => !prev)}
+                  onExportVideo={handleExportVideo}
+                  isExporting={isExportingVideo}
+                />
+              )}
+
               {/* TAB 5: Canvas Frame Border, Aspect Ratio & Visual Filters */}
               {activeTab === 'canvas' && (
                 <CanvasFramePanel
@@ -1805,11 +2237,30 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 ariaLabel="サイズ調整スライダー"
               />
             </div>
+
+            {/* Mobile Quick Preview Button in Controls Box */}
+            <div className="pt-2 mt-2 border-t border-[var(--md-sys-color-outline-variant)]/20 lg:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileViewMode('canvas');
+                  setTimeout(handleZoomFit, 100);
+                }}
+                className="w-full py-2.5 px-3 rounded-full bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <M3Icon name="visibility" size={16} />
+                <span>キャンバスプレビューへ戻る</span>
+              </button>
+            </div>
           </div>
           )}
 
           {/* Right Column: Viewport Control Toolbar + Canvas Box */}
-          <div className="flex flex-col items-center gap-2.5 w-full lg:w-auto">
+          <div
+            className={`${
+              mobileViewMode === 'settings' ? 'hidden lg:flex' : 'flex'
+            } flex-col items-center gap-2.5 w-full lg:w-auto`}
+          >
             {/* Viewport Control Bar */}
             <CanvasViewportToolbar
               zoomScale={zoomScale}
@@ -1848,6 +2299,13 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                   filter: cssFilters,
                   transform: `scale(${zoomScale})`,
                   transformOrigin: 'center center',
+                  ...(isVideo
+                    ? getVideoMotionStyle(
+                        canvasConfig.videoConfig?.motionStyle || 'aurora',
+                        canvasConfig.videoConfig?.speed || 1,
+                        isPlayingVideo
+                      )
+                    : {}),
                 }}
                 onPointerDown={handleCanvasPointerDown}
                 onPointerMove={handleCanvasPointerMove}
@@ -2151,6 +2609,124 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                   );
                 })}
               </div>
+            </div>
+
+            {/* Motion Video Playback & Quick Bar (Only for Video Mode) */}
+            {isVideo ? (
+              <div className="w-full max-w-[680px] p-2.5 sm:p-3 rounded-[20px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/40 shadow-xs flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsPlayingVideo(!isPlayingVideo)}
+                    className="w-9 h-9 rounded-full bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] flex items-center justify-center hover:opacity-90 active:scale-95 transition-all shadow-xs cursor-pointer shrink-0"
+                    title={isPlayingVideo ? '一時停止' : '再生'}
+                  >
+                    <M3Icon name={isPlayingVideo ? 'pause' : 'play_arrow'} size={20} />
+                  </button>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[12px] font-bold text-[var(--md-sys-color-on-surface)]">
+                        {isPlayingVideo ? '動画再生中' : '一時停止中'}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)] font-semibold">
+                        {canvasConfig.videoConfig?.aspectPreset || '9:16'} • {canvasConfig.videoConfig?.duration || 5}秒
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[var(--md-sys-color-on-surface-variant)]">
+                      {VIDEO_MOTION_PRESETS.find((p) => p.id === canvasConfig.videoConfig?.motionStyle)?.label || 'オーロラウェーブ'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+                  {VIDEO_MOTION_PRESETS.slice(0, 4).map((style) => (
+                    <button
+                      key={style.id}
+                      type="button"
+                      onClick={() => {
+                        pushHistory();
+                        setCanvasConfig((prev) => ({
+                          ...prev,
+                          videoConfig: {
+                            ...(prev.videoConfig || { duration: 5, fps: 30, format: 'mp4', speed: 1, aspectPreset: '9:16', motionStyle: 'aurora' }),
+                            motionStyle: style.id,
+                          },
+                        }));
+                      }}
+                      className={`px-2 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                        canvasConfig.videoConfig?.motionStyle === style.id
+                          ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] shadow-2xs'
+                          : 'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-on-surface)]'
+                      }`}
+                    >
+                      {style.label}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleExportVideo()}
+                  disabled={isExportingVideo}
+                  className="px-3.5 py-1.5 rounded-full bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)] text-[12px] font-bold hover:brightness-95 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <M3Icon name="download" size={16} />
+                  <span>動画書き出し</span>
+                </button>
+              </div>
+            ) : (
+              /* Still Image Quick Status & Dimension Bar (Only for Image Mode) */
+              <div className="w-full max-w-[680px] px-3.5 py-2 rounded-[18px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/30 flex items-center justify-between text-xs shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-blue-500" />
+                  <span className="font-bold text-[var(--md-sys-color-on-surface)] text-[12px]">
+                    静止画モード
+                  </span>
+                  <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] font-mono">
+                    {boxWidth * 2} × {boxHeight * 2} px (2x 高解像度)
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="font-mono uppercase px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-300/60">
+                    {canvasConfig.fileFormat}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleCreationType('video')}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
+                  >
+                    <M3Icon name="videocam" size={14} />
+                    <span>動画モードに切替</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Mobile Bottom Quick Actions */}
+            <div className="flex lg:hidden items-center justify-center gap-2 w-full max-w-sm mt-1 px-1">
+              <button
+                type="button"
+                onClick={() => setMobileViewMode('settings')}
+                className="flex-1 py-2.5 px-4 rounded-full bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer active:scale-98 transition-transform"
+              >
+                <M3Icon name="tune" size={16} />
+                <span>デザインを調整する</span>
+              </button>
+
+              {selectedTextLayer && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('text');
+                    setMobileViewMode('settings');
+                  }}
+                  className="py-2.5 px-3.5 rounded-full bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)] text-xs font-semibold flex items-center gap-1 cursor-pointer active:scale-98 transition-transform"
+                >
+                  <M3Icon name="title" size={16} />
+                  <span>文字設定</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

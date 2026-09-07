@@ -28,25 +28,76 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({
   className = '',
 }) => {
   return (
-    <aside
-      className={`w-[80px] h-full bg-[var(--md-sys-color-surface-container)] flex flex-col items-center py-6 border-r border-[var(--md-sys-color-outline-variant)]/20 select-none z-20 shrink-0 ${className}`}
-      aria-label="ナビゲーションレール"
-    >
-      <div className="flex flex-col items-center gap-6 w-full mt-2">
+    <>
+      {/* Desktop / Tablet: Side Navigation Rail */}
+      <aside
+        className={`hidden md:flex w-[80px] h-full bg-[var(--md-sys-color-surface-container)] flex-col items-center py-6 border-r border-[var(--md-sys-color-outline-variant)]/20 select-none z-20 shrink-0 ${className}`}
+        aria-label="ナビゲーションレール"
+      >
+        <div className="flex flex-col items-center gap-6 w-full mt-2">
+          {NAV_ITEMS.map((item) => {
+            const isSelected = currentTab === item.tab;
+            return (
+              <button
+                key={`desktop-${item.tab}`}
+                type="button"
+                onClick={() => onTabChange(item.tab)}
+                className="flex flex-col items-center group cursor-pointer w-full py-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-sys-color-primary)] rounded-[12px]"
+              >
+                {/* 56dp x 32dp pill indicator for selected item */}
+                <div className="relative w-[56px] h-[32px] flex items-center justify-center">
+                  {isSelected && (
+                    <motion.div
+                      layoutId="railIndicatorDesktop"
+                      className="absolute inset-0 rounded-full bg-[var(--md-sys-color-secondary-container)]"
+                      transition={{ duration: 0.2, ease: 'easeInOut' }}
+                    />
+                  )}
+                  <span
+                    className={`relative z-10 flex items-center justify-center transition-colors ${
+                      isSelected
+                        ? 'text-[var(--md-sys-color-on-secondary-container)]'
+                        : 'text-[var(--md-sys-color-on-surface-variant)] group-hover:text-[var(--md-sys-color-on-surface)]'
+                    }`}
+                  >
+                    <M3Icon name={item.icon} filled={isSelected} size={24} />
+                  </span>
+                </div>
+
+                {/* labelMedium */}
+                <span
+                  className={`text-[12px] font-medium leading-4 mt-1 tracking-tight transition-colors ${
+                    isSelected
+                      ? 'text-[var(--md-sys-color-on-surface)] font-semibold'
+                      : 'text-[var(--md-sys-color-on-surface-variant)] group-hover:text-[var(--md-sys-color-on-surface)]'
+                  }`}
+                >
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
+      {/* Mobile: Bottom Navigation Bar */}
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 h-[68px] bg-[var(--md-sys-color-surface-container)] border-t border-[var(--md-sys-color-outline-variant)]/30 flex items-center justify-around px-3 z-40 select-none shadow-[0_-2px_10px_rgba(0,0,0,0.06)]"
+        aria-label="ボトムナビゲーションバー"
+      >
         {NAV_ITEMS.map((item) => {
           const isSelected = currentTab === item.tab;
           return (
             <button
-              key={item.tab}
+              key={`mobile-${item.tab}`}
               type="button"
               onClick={() => onTabChange(item.tab)}
-              className="flex flex-col items-center group cursor-pointer w-full py-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-sys-color-primary)] rounded-[12px]"
+              className="flex-1 flex flex-col items-center justify-center h-full py-1 outline-none cursor-pointer group"
             >
-              {/* 56dp x 32dp pill indicator for selected item */}
-              <div className="relative w-[56px] h-[32px] flex items-center justify-center">
+              <div className="relative w-[60px] h-[32px] flex items-center justify-center">
                 {isSelected && (
                   <motion.div
-                    layoutId="railIndicator"
+                    layoutId="railIndicatorMobile"
                     className="absolute inset-0 rounded-full bg-[var(--md-sys-color-secondary-container)]"
                     transition={{ duration: 0.2, ease: 'easeInOut' }}
                   />
@@ -55,19 +106,17 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({
                   className={`relative z-10 flex items-center justify-center transition-colors ${
                     isSelected
                       ? 'text-[var(--md-sys-color-on-secondary-container)]'
-                      : 'text-[var(--md-sys-color-on-surface-variant)] group-hover:text-[var(--md-sys-color-on-surface)]'
+                      : 'text-[var(--md-sys-color-on-surface-variant)]'
                   }`}
                 >
-                  <M3Icon name={item.icon} filled={isSelected} size={24} />
+                  <M3Icon name={item.icon} filled={isSelected} size={22} />
                 </span>
               </div>
-
-              {/* labelMedium */}
               <span
-                className={`text-[12px] font-medium leading-4 mt-1 tracking-tight transition-colors ${
+                className={`text-[11px] font-medium leading-tight mt-0.5 tracking-tight transition-colors ${
                   isSelected
-                    ? 'text-[var(--md-sys-color-on-surface)] font-semibold'
-                    : 'text-[var(--md-sys-color-on-surface-variant)] group-hover:text-[var(--md-sys-color-on-surface)]'
+                    ? 'text-[var(--md-sys-color-on-surface)] font-bold'
+                    : 'text-[var(--md-sys-color-on-surface-variant)]'
                 }`}
               >
                 {item.label}
@@ -75,7 +124,7 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({
             </button>
           );
         })}
-      </div>
-    </aside>
+      </nav>
+    </>
   );
 };
