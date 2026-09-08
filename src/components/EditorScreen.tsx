@@ -45,6 +45,8 @@ import { CanvasViewportToolbar } from './CanvasViewportToolbar';
 import { PRESET_STICKERS, PRESET_BADGES, TEXT_GRADIENT_PRESETS } from '../utils/designAssets';
 import { ShareOnXDialog } from './ShareOnXDialog';
 import { GradecoLogo } from './GradecoLogo';
+import { SaveProjectDialog } from './SaveProjectDialog';
+import { getAppSettings, formatExportFileName } from '../services/settings';
 
 interface EditorScreenProps {
   canvasConfig: CanvasConfig;
@@ -149,13 +151,23 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   // Toast / Status Message
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Project Identity State (User can freely name & rename projects)
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(initialProject?.id || null);
+  const [projectName, setProjectName] = useState<string>(() => {
+    return initialProject?.name || '名称未設定のグラデーション';
+  });
+  const [isFavorite, setIsFavorite] = useState<boolean>(initialProject?.isFavorite || false);
+  const [showSaveDialog, setShowSaveDialog] = useState<boolean>(false);
+
   // Background Dragging State
   const [isDraggingBg, setIsDraggingBg] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // View scale / zoom for compact screens (80% / 90% / 100%)
   const [zoomScale, setZoomScale] = useState<number>(1);
-  const [showGuides, setShowGuides] = useState<boolean>(true);
+  const [showGuides, setShowGuides] = useState<boolean>(() => {
+    return getAppSettings().showGridByDefault ?? true;
+  });
   const [activeGuideX, setActiveGuideX] = useState<number | null>(null);
   const [activeGuideY, setActiveGuideY] = useState<number | null>(null);
   const [isFullscreenPreview, setIsFullscreenPreview] = useState<boolean>(false);
@@ -931,15 +943,22 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     }
   };
 
-  // Save to IndexedDB
-  const handleSaveProject = async () => {
+  // Open Save Dialog to let user pick name & options
+  const handleOpenSaveDialog = () => {
+    setShowSaveDialog(true);
+  };
+
+  // Perform project save with user-chosen name and options
+  const handlePerformSave = async (chosenName: string, asNew: boolean, isFav: boolean) => {
+    const settings = getAppSettings();
     try {
+      const targetId = (!asNew && currentProjectId) ? currentProjectId : `proj-${Date.now()}`;
       const proj: SavedProject = {
-        id: initialProject?.id || `proj-${Date.now()}`,
-        name: `グラデコ ${new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`,
-        createdAt: initialProject?.createdAt || Date.now(),
+        id: targetId,
+        name: chosenName,
+        createdAt: (!asNew && initialProject?.createdAt) || Date.now(),
         updatedAt: Date.now(),
-        isFavorite: initialProject?.isFavorite || false,
+        isFavorite: isFav,
         snapshot: {
           gradient,
           textLayers,
@@ -949,19 +968,26 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         },
       };
       await saveProject(proj);
-      setToastMessage('プロジェクトを保存しました');
+      setCurrentProjectId(targetId);
+      setProjectName(chosenName);
+      setIsFavorite(isFav);
+      setToastMessage(`「${chosenName}」を保存しました`);
     } catch (e) {
       setToastMessage('保存に失敗しました');
     } finally {
-      setTimeout(() => setToastMessage(null), 2500);
+      setTimeout(() => setToastMessage(null), settings.toastDurationMs || 2500);
     }
   };
 
-  // Download Action
+  // Download Action using custom project name and export scale settings
   const handleDownload = async (formatOverride?: 'png' | 'jpg' | 'svg') => {
-    const format = formatOverride || canvasConfig.fileFormat || 'png';
-    const exportWidth = boxWidth * 2;
-    const exportHeight = boxHeight * 2;
+    const settings = getAppSettings();
+    const format = formatOverride || canvasConfig.fileFormat || (settings.defaultExportFormat as any) || 'png';
+    const scale = settings.defaultExportScale || 2;
+    const exportWidth = boxWidth * scale;
+    const exportHeight = boxHeight * scale;
+
+    const baseName = formatExportFileName(projectName, format, settings.fileNamePattern).replace(/\.[^/.]+$/, '');
 
     try {
       await exportCanvasImage(
@@ -972,17 +998,17 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         gradient,
         textLayers,
         format,
-        'gradeco-design',
+        baseName,
         imageLayers,
         shapeLayers,
         canvasConfig
       );
-      setToastMessage(`${format.toUpperCase()} をダウンロードしました`);
+      setToastMessage(`${format.toUpperCase()} (${baseName}.${format}) をダウンロードしました`);
     } catch (err) {
       console.error(err);
       setToastMessage('ダウンロード処理でエラーが発生しました');
     } finally {
-      setTimeout(() => setToastMessage(null), 2500);
+      setTimeout(() => setToastMessage(null), settings.toastDurationMs || 2500);
     }
   };
 
@@ -1094,8 +1120,10 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         onProgress: (p) => setVideoExportProgress(p),
       });
 
-      downloadBlob(result.blob, `gradeco-motion-${Date.now()}.${result.extension}`);
-      setToastMessage(`動画 (${result.extension.toUpperCase()}) を書き出しました`);
+      const settings = getAppSettings();
+      const videoFileName = formatExportFileName(projectName, result.extension, settings.fileNamePattern);
+      downloadBlob(result.blob, videoFileName);
+      setToastMessage(`動画 (${videoFileName}) を書き出しました`);
     } catch (err) {
       console.error(err);
       setToastMessage('動画の書き出しに失敗しました');
@@ -1699,27 +1727,57 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         </div>
       </M3Dialog>
 
+      {/* Save Project Dialog */}
+      <SaveProjectDialog
+        isOpen={showSaveDialog}
+        onClose={() => setShowSaveDialog(false)}
+        currentName={projectName}
+        isExistingProject={!!currentProjectId}
+        isFavorite={isFavorite}
+        gradient={gradient}
+        textLayers={textLayers}
+        onSave={handlePerformSave}
+      />
+
       {/* COMPACT HEADER: Responsive sleek layout */}
       <header className="w-full h-[46px] sm:h-[50px] px-3 sm:px-4 py-1 flex items-center justify-between shrink-0 z-30 border-b border-[var(--md-sys-color-outline-variant)]/20 bg-[var(--md-sys-color-surface)]">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={onNavigateHome}
-            className="cursor-pointer transition-transform hover:scale-105 active:scale-95 outline-none rounded-xl p-0.5"
+            className="cursor-pointer transition-transform hover:scale-105 active:scale-95 outline-none rounded-xl p-0.5 shrink-0"
             title="ホームに戻る"
           >
             <GradecoLogo size={28} />
           </button>
-          <div>
+          <div className="shrink-0 hidden xs:block">
             <div className="flex items-center gap-1.5">
               <h1 className="text-[15px] sm:text-[17px] font-black tracking-tight text-[var(--md-sys-color-on-surface)] leading-none">
                 グラデコ
               </h1>
             </div>
             <span className="hidden sm:inline text-[9px] text-[var(--md-sys-color-on-surface-variant)] font-medium">
-              {isVideo ? 'Gradeco Motion Video Studio' : 'Gradeco Static Graphic Studio'}
+              {isVideo ? 'Motion Video Studio' : 'Static Graphic Studio'}
             </span>
           </div>
+
+          {/* Project Title Badge - User can click to rename and save */}
+          <div className="h-4 w-px bg-[var(--md-sys-color-outline-variant)]/40 hidden sm:block shrink-0" />
+          <button
+            type="button"
+            onClick={handleOpenSaveDialog}
+            className="group flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[var(--md-sys-color-surface-container)]/80 hover:bg-[var(--md-sys-color-surface-container-high)] border border-[var(--md-sys-color-outline-variant)]/30 hover:border-[var(--md-sys-color-primary)]/50 transition-all text-left max-w-[130px] sm:max-w-[200px] md:max-w-[280px] cursor-pointer"
+            title="作品名を変更・保存する"
+          >
+            <span className="text-[12px] sm:text-[13px] font-semibold text-[var(--md-sys-color-on-surface)] truncate">
+              {projectName}
+            </span>
+            <M3Icon
+              name="edit"
+              size={13}
+              className="text-[var(--md-sys-color-outline)] group-hover:text-[var(--md-sys-color-primary)] shrink-0 transition-colors"
+            />
+          </button>
         </div>
 
         {/* Floating Toolbar */}
@@ -1730,7 +1788,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               {
                 icon: 'save',
                 label: '保存',
-                onClick: handleSaveProject,
+                onClick: handleOpenSaveDialog,
               },
               {
                 icon: 'undo',
@@ -2841,7 +2899,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                               fontSize: `${layer.fontSize || 32}px`,
                               fontWeight: layer.fontWeight || '700',
                               color: isGradientText ? 'transparent' : (layer.color || '#FFFFFF'),
-                              background: isGradientText ? gradPreset!.css : undefined,
+                              backgroundImage: isGradientText ? gradPreset!.css : undefined,
                               WebkitBackgroundClip: isGradientText ? 'text' : undefined,
                               backgroundClip: isGradientText ? 'text' : undefined,
                               WebkitTextFillColor: isGradientText ? 'transparent' : undefined,

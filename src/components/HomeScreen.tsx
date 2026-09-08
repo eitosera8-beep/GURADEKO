@@ -7,8 +7,23 @@ import { M3Icon } from './M3Icon';
 import { M3Dialog } from './M3Dialog';
 import { ShareOnXDialog } from './ShareOnXDialog';
 import { GradecoLogo } from './GradecoLogo';
-import { NavigationTab, SavedProject } from '../types';
-import { getAllProjects, deleteProject, toggleFavorite, clearAllProjects } from '../services/db';
+import { RenameProjectDialog } from './RenameProjectDialog';
+import { NavigationTab, SavedProject, AppSettings } from '../types';
+import {
+  getAllProjects,
+  deleteProject,
+  toggleFavorite,
+  clearAllProjects,
+  updateProjectName,
+  exportAllProjectsJson,
+  importProjectsJson,
+} from '../services/db';
+import {
+  getAppSettings,
+  saveAppSettings,
+  resetAppSettings,
+  subscribeToSettingsChange,
+} from '../services/settings';
 import { getGradientCss } from '../utils/gradientUtils';
 
 interface HomeScreenProps {
@@ -31,9 +46,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
-  // Dialog states for deleting
+  // App Settings State
+  const [appSettings, setAppSettings] = useState<AppSettings>(() => getAppSettings());
+
+  // Dialog states for deleting, renaming & sharing
   const [projectToDelete, setProjectToDelete] = useState<SavedProject | null>(null);
+  const [projectToRename, setProjectToRename] = useState<SavedProject | null>(null);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
+  const [showResetSettingsDialog, setShowResetSettingsDialog] = useState(false);
   const [showShareOnXDialog, setShowShareOnXDialog] = useState(false);
 
   const loadProjects = async () => {
@@ -91,6 +111,102 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     await toggleFavorite(id);
     loadProjects();
   };
+
+  // Rename handlers
+  const triggerRename = (proj: SavedProject, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setProjectToRename(proj);
+  };
+
+  const confirmRename = async (newName: string) => {
+    if (!projectToRename) return;
+    try {
+      const updated = await updateProjectName(projectToRename.id, newName);
+      if (updated) {
+        setMessage(`作品名を「${updated.name}」に変更しました`);
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id === updated.id ? { ...p, name: updated.name, updatedAt: updated.updatedAt } : p
+          )
+        );
+      }
+    } catch (e) {
+      console.error(e);
+      setMessage('作品名の変更に失敗しました');
+    } finally {
+      setTimeout(() => setMessage(null), 2500);
+      setProjectToRename(null);
+    }
+  };
+
+  // Export JSON Backup
+  const handleExportJson = async () => {
+    try {
+      const jsonStr = await exportAllProjectsJson();
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gradeco-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMessage('バックアップJSONファイルを書き出しました');
+    } catch (e) {
+      console.error(e);
+      setMessage('バックアップの書き出しに失敗しました');
+    } finally {
+      setTimeout(() => setMessage(null), 2500);
+    }
+  };
+
+  // Import JSON Backup
+  const handleImportJson = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const content = ev.target?.result as string;
+        if (!content) return;
+        const count = await importProjectsJson(content);
+        setMessage(`${count}件の作品データを復元しました`);
+        loadProjects();
+      } catch (err: any) {
+        console.error(err);
+        setMessage(err?.message || 'データの復元に失敗しました');
+      } finally {
+        setTimeout(() => setMessage(null), 3000);
+        e.target.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Update a single app setting
+  const handleUpdateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+    const next = saveAppSettings({ [key]: value });
+    setAppSettings(next);
+    if (key === 'themeMode') {
+      onThemeModeChange(value as 'system' | 'light' | 'dark');
+    }
+  };
+
+  // Reset all app settings to defaults
+  const handleConfirmResetSettings = () => {
+    const reset = resetAppSettings();
+    setAppSettings(reset);
+    onThemeModeChange(reset.themeMode);
+    setShowResetSettingsDialog(false);
+    setMessage('設定を初期状態にリセットしました');
+    setTimeout(() => setMessage(null), 2500);
+  };
+
+  // Subscribe to external settings changes
+  useEffect(() => {
+    return subscribeToSettingsChange((updated) => {
+      setAppSettings(updated);
+    });
+  }, []);
 
   const filteredProjects = projects.filter((p) => {
     if (activeTab === 'favorite' && !p.isFavorite) return false;
@@ -396,15 +512,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                   </p>
                                 </div>
 
-                                {/* Delete Button */}
-                                <button
-                                  type="button"
-                                  onClick={(e) => triggerDeleteSingle(proj, e)}
-                                  className="p-2 rounded-full text-[var(--md-sys-color-outline)] hover:text-[var(--md-sys-color-error)] hover:bg-[var(--md-sys-color-error-container)] transition-colors cursor-pointer shrink-0"
-                                  title="このデザインを削除"
-                                >
-                                  <M3Icon name="delete" size={18} />
-                                </button>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  {/* Rename Button */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => triggerRename(proj, e)}
+                                    className="p-1.5 rounded-full text-[var(--md-sys-color-outline)] hover:text-[var(--md-sys-color-primary)] hover:bg-[var(--md-sys-color-surface-container-high)] transition-colors cursor-pointer"
+                                    title="作品名を変更"
+                                  >
+                                    <M3Icon name="edit" size={17} />
+                                  </button>
+                                  {/* Delete Button */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => triggerDeleteSingle(proj, e)}
+                                    className="p-1.5 rounded-full text-[var(--md-sys-color-outline)] hover:text-[var(--md-sys-color-error)] hover:bg-[var(--md-sys-color-error-container)] transition-colors cursor-pointer"
+                                    title="このデザインを削除"
+                                  >
+                                    <M3Icon name="delete" size={17} />
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           );
@@ -566,8 +693,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
+                          onClick={(e) => triggerRename(proj, e)}
+                          className="text-[var(--md-sys-color-outline)] hover:text-[var(--md-sys-color-primary)] hover:bg-[var(--md-sys-color-surface-container-high)] p-1.5 rounded-full transition-colors cursor-pointer"
+                          title="作品名を変更"
+                        >
+                          <M3Icon name="edit" size={17} />
+                        </button>
+                        <button
+                          type="button"
                           onClick={(e) => handleToggleFav(proj.id, e)}
-                          className="text-[var(--md-sys-color-primary)] p-1.5 rounded-full hover:bg-[var(--md-sys-color-surface-container-high)]"
+                          className="text-[var(--md-sys-color-primary)] p-1.5 rounded-full hover:bg-[var(--md-sys-color-surface-container-high)] transition-colors cursor-pointer"
                           title="お気に入り解除"
                         >
                           <M3Icon name="favorite" filled size={18} />
@@ -575,7 +710,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         <button
                           type="button"
                           onClick={(e) => triggerDeleteSingle(proj, e)}
-                          className="text-[var(--md-sys-color-outline)] hover:text-[var(--md-sys-color-error)] hover:bg-[var(--md-sys-color-error-container)] p-1.5 rounded-full"
+                          className="text-[var(--md-sys-color-outline)] hover:text-[var(--md-sys-color-error)] hover:bg-[var(--md-sys-color-error-container)] p-1.5 rounded-full transition-colors cursor-pointer"
                           title="削除"
                         >
                           <M3Icon name="delete" size={18} />
@@ -597,65 +732,434 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
         {/* Tab 4: 設定 (Settings) */}
         {activeTab === 'settings' && (
-          <div className="p-4 sm:p-6 md:p-8 max-w-2xl mx-auto w-full">
-            <h1 className="text-[22px] sm:text-[28px] font-bold text-[var(--md-sys-color-on-surface)] mb-4 sm:mb-6">
-              設定
-            </h1>
-
-            <div className="rounded-[20px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/30 p-5 sm:p-6 mb-6">
-              <h2 className="text-[17px] sm:text-[18px] font-semibold mb-2">テーマ切り替え</h2>
-              <p className="text-[13px] sm:text-[14px] text-[var(--md-sys-color-on-surface-variant)] mb-4">
-                端末のシステム設定に従うか、ライト／ダークを手動で選択できます。
-              </p>
-              <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3">
-                <button
-                  type="button"
-                  onClick={() => onThemeModeChange('system')}
-                  className={`px-4 py-2.5 rounded-[10px] text-[13px] sm:text-[14px] font-medium border cursor-pointer transition-colors text-center ${
-                    themeMode === 'system'
-                      ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] border-transparent shadow-xs'
-                      : 'bg-transparent border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface)]'
-                  }`}
-                >
-                  システム設定に従う
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onThemeModeChange('light')}
-                  className={`px-4 py-2.5 rounded-[10px] text-[13px] sm:text-[14px] font-medium border cursor-pointer transition-colors text-center ${
-                    themeMode === 'light'
-                      ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] border-transparent shadow-xs'
-                      : 'bg-transparent border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface)]'
-                  }`}
-                >
-                  ライトモード
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onThemeModeChange('dark')}
-                  className={`px-4 py-2.5 rounded-[10px] text-[13px] sm:text-[14px] font-medium border cursor-pointer transition-colors text-center ${
-                    themeMode === 'dark'
-                      ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] border-transparent shadow-xs'
-                      : 'bg-transparent border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface)]'
-                  }`}
-                >
-                  ダークモード
-                </button>
+          <div className="p-4 sm:p-6 md:p-8 max-w-2xl mx-auto w-full pb-20">
+            <div className="flex items-center justify-between mb-4 sm:mb-6">
+              <div>
+                <h1 className="text-[22px] sm:text-[28px] font-bold text-[var(--md-sys-color-on-surface)]">
+                  設定
+                </h1>
+                <p className="text-[13px] sm:text-[14px] text-[var(--md-sys-color-on-surface-variant)] mt-1">
+                  エディタの動作、書き出し品質、テーマ、データバックアップを管理できます。
+                </p>
               </div>
             </div>
 
-            <div className="rounded-[20px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/30 p-5 sm:p-6">
-              <h2 className="text-[17px] sm:text-[18px] font-semibold mb-2">グラデコ (Gradeco) について</h2>
-              <p className="text-[13px] sm:text-[14px] text-[var(--md-sys-color-on-surface-variant)] leading-relaxed mb-4">
-                Google Material 3 Expressive ガイドラインに基づいた Blue トーンの配色、Roboto フォント、滑らかなモーションを採用したモダンなグラデーションデザインツールです。
-              </p>
-              <div className="text-[12px] sm:text-[13px] text-[var(--md-sys-color-outline)]">
-                バージョン: 1.2.0 (モバイル完全対応)
+            <div className="space-y-5">
+              {/* 1. 外観・テーマ */}
+              <div className="rounded-[20px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/30 p-5 sm:p-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <M3Icon name="palette" size={20} className="text-[var(--md-sys-color-primary)]" />
+                  <h2 className="text-[16px] sm:text-[17px] font-semibold text-[var(--md-sys-color-on-surface)]">
+                    外観・テーマ
+                  </h2>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-[13px] font-medium text-[var(--md-sys-color-on-surface)] block mb-2">
+                      カラーテーマ
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['system', 'light', 'dark'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => handleUpdateSetting('themeMode', mode)}
+                          className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-medium border cursor-pointer transition-all text-center ${
+                            appSettings.themeMode === mode
+                              ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] border-transparent shadow-xs'
+                              : 'bg-[var(--md-sys-color-surface)] border-[var(--md-sys-color-outline-variant)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)]'
+                          }`}
+                        >
+                          {mode === 'system' ? 'システム' : mode === 'light' ? 'ライト' : 'ダーク'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[13px] font-medium text-[var(--md-sys-color-on-surface)] block mb-2">
+                      UI表示の密度
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['comfortable', 'compact'] as const).map((density) => (
+                        <button
+                          key={density}
+                          type="button"
+                          onClick={() => handleUpdateSetting('uiDensity', density)}
+                          className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-medium border cursor-pointer transition-all text-center ${
+                            appSettings.uiDensity === density
+                              ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] border-transparent shadow-xs'
+                              : 'bg-[var(--md-sys-color-surface)] border-[var(--md-sys-color-outline-variant)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)]'
+                          }`}
+                        >
+                          {density === 'comfortable' ? 'ゆったり (標準)' : 'コンパクト (高密度)'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. 保存・書き出し初期設定 */}
+              <div className="rounded-[20px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/30 p-5 sm:p-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <M3Icon name="download" size={20} className="text-[var(--md-sys-color-primary)]" />
+                  <h2 className="text-[16px] sm:text-[17px] font-semibold text-[var(--md-sys-color-on-surface)]">
+                    保存・書き出し設定
+                  </h2>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-[13px] font-medium text-[var(--md-sys-color-on-surface)] block mb-2">
+                      既定の画像形式
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(['png', 'jpg', 'webp', 'svg'] as const).map((fmt) => (
+                        <button
+                          key={fmt}
+                          type="button"
+                          onClick={() => handleUpdateSetting('defaultExportFormat', fmt)}
+                          className={`py-1.5 px-2 rounded-xl text-xs sm:text-sm font-medium uppercase border cursor-pointer transition-all text-center ${
+                            appSettings.defaultExportFormat === fmt
+                              ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] border-transparent shadow-xs'
+                              : 'bg-[var(--md-sys-color-surface)] border-[var(--md-sys-color-outline-variant)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)]'
+                          }`}
+                        >
+                          {fmt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[13px] font-medium text-[var(--md-sys-color-on-surface)] block mb-2">
+                      書き出し解像度 (画像スケール)
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([1, 2, 3] as const).map((scale) => (
+                        <button
+                          key={scale}
+                          type="button"
+                          onClick={() => handleUpdateSetting('defaultExportScale', scale)}
+                          className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-medium border cursor-pointer transition-all text-center ${
+                            appSettings.defaultExportScale === scale
+                              ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] border-transparent shadow-xs'
+                              : 'bg-[var(--md-sys-color-surface)] border-[var(--md-sys-color-outline-variant)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)]'
+                          }`}
+                        >
+                          {scale === 1 ? '1x (標準)' : scale === 2 ? '2x (高解像度・推奨)' : '3x (超高精細)'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[13px] font-medium text-[var(--md-sys-color-on-surface)] block mb-2">
+                      ファイル名の命名形式
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {[
+                        { id: 'name-only', label: '作品名のみ', sample: '作品名.png' },
+                        { id: 'name-date', label: '作品名＋日付', sample: '作品名_20260908.png' },
+                        { id: 'gradeco-prefix', label: 'Gradeco_作品名', sample: 'Gradeco_作品名.png' },
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => handleUpdateSetting('fileNamePattern', item.id as any)}
+                          className={`py-2 px-2.5 rounded-xl text-xs font-medium border cursor-pointer transition-all text-left flex flex-col justify-center ${
+                            appSettings.fileNamePattern === item.id
+                              ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] border-transparent shadow-xs'
+                              : 'bg-[var(--md-sys-color-surface)] border-[var(--md-sys-color-outline-variant)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)]'
+                          }`}
+                        >
+                          <span className="font-semibold">{item.label}</span>
+                          <span className="text-[10px] opacity-80 truncate font-mono mt-0.5">{item.sample}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[13px] font-medium text-[var(--md-sys-color-on-surface)] block mb-2">
+                      既定の動画形式
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['mp4', 'webm', 'gif'] as const).map((fmt) => (
+                        <button
+                          key={fmt}
+                          type="button"
+                          onClick={() => handleUpdateSetting('defaultVideoFormat', fmt)}
+                          className={`py-1.5 px-2 rounded-xl text-xs sm:text-sm font-medium uppercase border cursor-pointer transition-all text-center ${
+                            appSettings.defaultVideoFormat === fmt
+                              ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] border-transparent shadow-xs'
+                              : 'bg-[var(--md-sys-color-surface)] border-[var(--md-sys-color-outline-variant)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)]'
+                          }`}
+                        >
+                          {fmt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. エディタ操作・アシスタント */}
+              <div className="rounded-[20px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/30 p-5 sm:p-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <M3Icon name="tune" size={20} className="text-[var(--md-sys-color-primary)]" />
+                  <h2 className="text-[16px] sm:text-[17px] font-semibold text-[var(--md-sys-color-on-surface)]">
+                    エディタ操作・アシスタント
+                  </h2>
+                </div>
+
+                <div className="space-y-3.5">
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)]/20">
+                    <div>
+                      <span className="text-sm font-medium text-[var(--md-sys-color-on-surface)] block">
+                        補助グリッド線の初期表示
+                      </span>
+                      <span className="text-xs text-[var(--md-sys-color-on-surface-variant)] block">
+                        キャンバス起動時にグリッドガイドをあらかじめ表示します
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateSetting('showGridByDefault', !appSettings.showGridByDefault)}
+                      className={`w-12 h-7 rounded-full transition-colors cursor-pointer relative p-0.5 shrink-0 ${
+                        appSettings.showGridByDefault
+                          ? 'bg-[var(--md-sys-color-primary)]'
+                          : 'bg-[var(--md-sys-color-surface-container-highest)] border border-[var(--md-sys-color-outline)]'
+                      }`}
+                    >
+                      <div
+                        className={`w-6 h-6 rounded-full bg-white transition-transform ${
+                          appSettings.showGridByDefault ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)]/20">
+                    <div>
+                      <span className="text-sm font-medium text-[var(--md-sys-color-on-surface)] block">
+                        整列スナップガイド (吸着)
+                      </span>
+                      <span className="text-xs text-[var(--md-sys-color-on-surface-variant)] block">
+                        テキストや画像レイヤーをキャンバス中央に吸着させます
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateSetting('enableSnapAssist', !appSettings.enableSnapAssist)}
+                      className={`w-12 h-7 rounded-full transition-colors cursor-pointer relative p-0.5 shrink-0 ${
+                        appSettings.enableSnapAssist
+                          ? 'bg-[var(--md-sys-color-primary)]'
+                          : 'bg-[var(--md-sys-color-surface-container-highest)] border border-[var(--md-sys-color-outline)]'
+                      }`}
+                    >
+                      <div
+                        className={`w-6 h-6 rounded-full bg-white transition-transform ${
+                          appSettings.enableSnapAssist ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="text-[13px] font-medium text-[var(--md-sys-color-on-surface)] block mb-2">
+                      取り消し (Undo) 履歴の保持件数
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([20, 50, 100] as const).map((limit) => (
+                        <button
+                          key={limit}
+                          type="button"
+                          onClick={() => handleUpdateSetting('undoHistoryLimit', limit)}
+                          className={`py-1.5 px-3 rounded-xl text-xs sm:text-sm font-medium border cursor-pointer transition-all text-center ${
+                            appSettings.undoHistoryLimit === limit
+                              ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] border-transparent shadow-xs'
+                              : 'bg-[var(--md-sys-color-surface)] border-[var(--md-sys-color-outline-variant)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)]'
+                          }`}
+                        >
+                          {limit} 件
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[13px] font-medium text-[var(--md-sys-color-on-surface)] block mb-2">
+                      カラーコード形式
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['hex', 'rgb', 'hsl'] as const).map((fmt) => (
+                        <button
+                          key={fmt}
+                          type="button"
+                          onClick={() => handleUpdateSetting('colorFormat', fmt)}
+                          className={`py-1.5 px-3 rounded-xl text-xs sm:text-sm font-medium uppercase border cursor-pointer transition-all text-center ${
+                            appSettings.colorFormat === fmt
+                              ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] border-transparent shadow-xs'
+                              : 'bg-[var(--md-sys-color-surface)] border-[var(--md-sys-color-outline-variant)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)]'
+                          }`}
+                        >
+                          {fmt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. データ管理・バックアップ */}
+              <div className="rounded-[20px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/30 p-5 sm:p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <M3Icon name="folder_zip" size={20} className="text-[var(--md-sys-color-primary)]" />
+                    <h2 className="text-[16px] sm:text-[17px] font-semibold text-[var(--md-sys-color-on-surface)]">
+                      データ管理・バックアップ
+                    </h2>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)]">
+                    保存作品: {projects.length} 件
+                  </span>
+                </div>
+
+                <p className="text-[13px] text-[var(--md-sys-color-on-surface-variant)] mb-4 leading-relaxed">
+                  作成したグラデーション作品はブラウザ内部（IndexedDB）に安全に保存されています。別の端末へ移行したい場合やバックアップとしてJSONファイルを書き出し・復元できます。
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                  <button
+                    type="button"
+                    onClick={handleExportJson}
+                    disabled={projects.length === 0}
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)] hover:bg-[var(--md-sys-color-surface-container-high)] text-sm font-semibold text-[var(--md-sys-color-on-surface)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <M3Icon name="file_download" size={18} className="text-[var(--md-sys-color-primary)]" />
+                    <span>全作品をJSON保存</span>
+                  </button>
+
+                  <label className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)] hover:bg-[var(--md-sys-color-surface-container-high)] text-sm font-semibold text-[var(--md-sys-color-on-surface)] transition-colors cursor-pointer">
+                    <M3Icon name="file_upload" size={18} className="text-[var(--md-sys-color-primary)]" />
+                    <span>JSONから復元</span>
+                    <input
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={handleImportJson}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div className="pt-3 border-t border-[var(--md-sys-color-outline-variant)]/20 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowResetSettingsDialog(true)}
+                    className="text-xs text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-primary)] underline cursor-pointer py-1"
+                  >
+                    設定を初期状態にリセット
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowClearAllDialog(true)}
+                    disabled={projects.length === 0}
+                    className="text-xs text-[var(--md-sys-color-error)] hover:bg-[var(--md-sys-color-error-container)]/30 px-3 py-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                  >
+                    保存データをすべて消去
+                  </button>
+                </div>
+              </div>
+
+              {/* 5. グラデコ (Gradeco) について */}
+              <div className="rounded-[20px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/30 p-5 sm:p-6">
+                <div className="flex items-center gap-2.5 mb-2">
+                  <GradecoLogo size={22} />
+                  <h2 className="text-[16px] sm:text-[17px] font-semibold text-[var(--md-sys-color-on-surface)]">
+                    グラデコ (Gradeco) について
+                  </h2>
+                </div>
+                <p className="text-[13px] sm:text-[14px] text-[var(--md-sys-color-on-surface-variant)] leading-relaxed mb-3">
+                  Google Material 3 Expressive ガイドラインに基づいた Blue トーンの配色、Roboto フォント、滑らかなモーションを採用したモダンなグラデーション＆動く背景デザインツールです。
+                </p>
+                <div className="flex items-center justify-between text-[11px] sm:text-[12px] text-[var(--md-sys-color-outline)] pt-2 border-t border-[var(--md-sys-color-outline-variant)]/20">
+                  <span>バージョン: 1.3.0 (保存名指定・設定拡張版)</span>
+                  <span>オフライン・PWA対応</span>
+                </div>
               </div>
             </div>
           </div>
         )}
       </main>
+
+      {/* Rename Project Dialog */}
+      <RenameProjectDialog
+        isOpen={!!projectToRename}
+        onClose={() => setProjectToRename(null)}
+        currentName={projectToRename?.name || ''}
+        onRename={confirmRename}
+      />
+
+      {/* Delete Single Project Confirmation Dialog */}
+      <M3Dialog
+        isOpen={!!projectToDelete}
+        onClose={() => setProjectToDelete(null)}
+        title="デザインの削除"
+      >
+        <p className="text-sm text-[var(--md-sys-color-on-surface-variant)] mb-4">
+          「{projectToDelete?.name}」を削除してもよろしいですか？この操作は取り消せません。
+        </p>
+        <div className="flex justify-end gap-2">
+          <M3Button variant="text" onClick={() => setProjectToDelete(null)}>
+            キャンセル
+          </M3Button>
+          <M3Button variant="filled" onClick={confirmDeleteSingle}>
+            削除する
+          </M3Button>
+        </div>
+      </M3Dialog>
+
+      {/* Clear All Projects Confirmation Dialog */}
+      <M3Dialog
+        isOpen={showClearAllDialog}
+        onClose={() => setShowClearAllDialog(false)}
+        title="保存データの完全消去"
+      >
+        <p className="text-sm text-[var(--md-sys-color-on-surface-variant)] mb-4">
+          保存されているすべてのデザイン（全{projects.length}件）を消去してもよろしいですか？この操作は取り消せません。
+        </p>
+        <div className="flex justify-end gap-2">
+          <M3Button variant="text" onClick={() => setShowClearAllDialog(false)}>
+            キャンセル
+          </M3Button>
+          <M3Button variant="filled" onClick={confirmClearAll}>
+            すべて消去
+          </M3Button>
+        </div>
+      </M3Dialog>
+
+      {/* Reset Settings Confirmation Dialog */}
+      <M3Dialog
+        isOpen={showResetSettingsDialog}
+        onClose={() => setShowResetSettingsDialog(false)}
+        title="設定のリセット"
+      >
+        <p className="text-sm text-[var(--md-sys-color-on-surface-variant)] mb-4">
+          すべてのエディタ設定や保存初期設定をデフォルト値に戻しますか？保存された作品データは消去されません。
+        </p>
+        <div className="flex justify-end gap-2">
+          <M3Button variant="text" onClick={() => setShowResetSettingsDialog(false)}>
+            キャンセル
+          </M3Button>
+          <M3Button variant="filled" onClick={handleConfirmResetSettings}>
+            リセットする
+          </M3Button>
+        </div>
+      </M3Dialog>
 
       {/* Share on X Dialog for Home Screen */}
       <ShareOnXDialog

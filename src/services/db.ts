@@ -101,3 +101,67 @@ export async function toggleFavorite(id: string): Promise<SavedProject | null> {
     getReq.onerror = () => reject(getReq.error);
   });
 }
+
+export async function updateProjectName(id: string, newName: string): Promise<SavedProject | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const getReq = store.get(id);
+
+    getReq.onsuccess = () => {
+      const proj = getReq.result as SavedProject;
+      if (!proj) {
+        resolve(null);
+        return;
+      }
+      proj.name = newName.trim() || '名称未設定';
+      proj.updatedAt = Date.now();
+      const putReq = store.put(proj);
+      putReq.onsuccess = () => resolve(proj);
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+export async function exportAllProjectsJson(): Promise<string> {
+  const projects = await getAllProjects();
+  return JSON.stringify({
+    app: 'Gradeco',
+    version: '1.2.0',
+    exportedAt: new Date().toISOString(),
+    projects,
+  }, null, 2);
+}
+
+export async function importProjectsJson(jsonStr: string): Promise<number> {
+  const parsed = JSON.parse(jsonStr);
+  const projects: SavedProject[] = Array.isArray(parsed) ? parsed : (parsed.projects || []);
+  if (!Array.isArray(projects) || projects.length === 0) {
+    throw new Error('有効なプロジェクトデータが見つかりませんでした');
+  }
+
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    let count = 0;
+
+    for (const proj of projects) {
+      if (proj && proj.snapshot && proj.snapshot.gradient) {
+        // Ensure unique ID or preserve
+        const item: SavedProject = {
+          ...proj,
+          id: proj.id || `proj-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          updatedAt: Date.now(),
+        };
+        store.put(item);
+        count++;
+      }
+    }
+
+    tx.oncomplete = () => resolve(count);
+    tx.onerror = () => reject(tx.error);
+  });
+}

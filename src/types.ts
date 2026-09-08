@@ -169,4 +169,25 @@ export interface SavedProject {
   snapshot: EditorSnapshot;
 }
 
+export interface AppSettings {
+  // Appearance
+  themeMode: 'system' | 'light' | 'dark';
+  uiDensity: 'comfortable' | 'compact';
+
+  // Export Defaults
+  defaultExportFormat: 'png' | 'jpg' | 'svg' | 'webp';
+  defaultExportScale: 1 | 2 | 3;
+  fileNamePattern: 'name-only' | 'name-date' | 'gradeco-prefix';
+  defaultVideoFormat: 'mp4' | 'webm' | 'gif';
+
+  // Editor Assistant
+  showGridByDefault: boolean;
+  enableSnapAssist: boolean;
+  undoHistoryLimit: 20 | 50 | 100;
+  toastDurationMs: number; // 1500 | 2500 | 4000
+
+  // Quick Color format
+  colorFormat: 'hex' | 'rgb' | 'hsl';
+}
+
 
