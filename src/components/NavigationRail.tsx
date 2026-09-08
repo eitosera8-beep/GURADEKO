@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { M3Icon } from './M3Icon';
+import { GradecoLogo } from './GradecoLogo';
 import { NavigationTab } from '../types';
 
 interface NavigationRailProps {
@@ -31,10 +32,20 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({
     <>
       {/* Desktop / Tablet: Side Navigation Rail */}
       <aside
-        className={`hidden md:flex w-[80px] h-full bg-[var(--md-sys-color-surface-container)] flex-col items-center py-6 border-r border-[var(--md-sys-color-outline-variant)]/20 select-none z-20 shrink-0 ${className}`}
+        className={`hidden md:flex w-[80px] h-full bg-[var(--md-sys-color-surface-container)] flex-col items-center py-5 border-r border-[var(--md-sys-color-outline-variant)]/20 select-none z-20 shrink-0 ${className}`}
         aria-label="ナビゲーションレール"
       >
-        <div className="flex flex-col items-center gap-6 w-full mt-2">
+        {/* Brand App Logo at top of rail */}
+        <button
+          type="button"
+          onClick={() => onTabChange('home')}
+          className="mb-5 p-1 rounded-2xl cursor-pointer transition-transform hover:scale-110 active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-sys-color-primary)]"
+          title="Gradeco ホームへ"
+        >
+          <GradecoLogo size={38} />
+        </button>
+
+        <div className="flex flex-col items-center gap-6 w-full">
           {NAV_ITEMS.map((item) => {
             const isSelected = currentTab === item.tab;
             return (

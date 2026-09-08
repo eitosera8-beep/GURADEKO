@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { M3Icon } from './M3Icon';
 
 interface CanvasTransformBoxProps {
@@ -10,6 +10,7 @@ interface CanvasTransformBoxProps {
   isSelected: boolean;
   boxWidth: number;
   boxHeight: number;
+  zoomScale?: number;
   type: 'text' | 'image' | 'shape';
   fontSize?: number;
   onResize?: (newWidth: number, newHeight: number, newFontSize?: number) => void;
@@ -34,6 +35,7 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
   isSelected,
   boxWidth,
   boxHeight,
+  zoomScale = 1,
   type,
   fontSize,
   onResize,
@@ -48,6 +50,8 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
   onEditInline,
   children,
 }) => {
+  const boxRef = useRef<HTMLDivElement>(null);
+
   // Corner resize handling
   const handleCornerPointerDown = (
     e: React.PointerEvent<HTMLDivElement>,
@@ -62,11 +66,12 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
     const startWidth = width;
     const startHeight = height;
     const startFontSize = fontSize || 32;
+    const safeZoom = zoomScale || 1;
 
     const onPointerMove = (moveEv: PointerEvent) => {
       moveEv.preventDefault();
-      const dx = moveEv.clientX - startClientX;
-      const dy = moveEv.clientY - startClientY;
+      const dx = (moveEv.clientX - startClientX) / safeZoom;
+      const dy = (moveEv.clientY - startClientY) / safeZoom;
 
       let scaleFactor = 1;
       if (corner === 'se') {
@@ -106,11 +111,8 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
 
     const onPointerMove = (moveEv: PointerEvent) => {
       moveEv.preventDefault();
-      // Calculate angle from center (x, y) in canvas coordinates
-      // Approximate screen position
-      const targetEl = e.currentTarget.parentElement;
-      if (!targetEl) return;
-      const rect = targetEl.getBoundingClientRect();
+      if (!boxRef.current) return;
+      const rect = boxRef.current.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
       const radians = Math.atan2(moveEv.clientY - centerY, moveEv.clientX - centerX);
@@ -138,6 +140,7 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
 
   return (
     <div
+      ref={boxRef}
       style={{
         left: `${x}px`,
         top: `${y}px`,
@@ -158,6 +161,7 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
 
           {/* Floating Quick Action Toolbar (Above Element) */}
           <div
+            data-transform-handle="true"
             onPointerDown={(e) => e.stopPropagation()}
             style={{ transform: `rotate(${-rotation}deg)` }}
             className="absolute -top-12 left-1/2 -translate-x-1/2 bg-[var(--md-sys-color-surface-container-highest)]/95 backdrop-blur-md px-2 py-1 rounded-full shadow-lg border border-[var(--md-sys-color-outline-variant)]/60 flex items-center gap-1 z-40 text-xs whitespace-nowrap pointer-events-auto animate-in fade-in zoom-in-95 duration-150"
@@ -319,32 +323,40 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
           {/* 4 Corner Resize Handles */}
           {/* Top-Left NW */}
           <div
+            data-transform-handle="true"
             onPointerDown={(e) => handleCornerPointerDown(e, 'nw')}
             className="absolute -top-2.5 -left-2.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--md-sys-color-primary)] shadow-sm cursor-nwse-resize pointer-events-auto hover:scale-125 transition-transform"
             title="サイズ変更 (左上)"
           />
           {/* Top-Right NE */}
           <div
+            data-transform-handle="true"
             onPointerDown={(e) => handleCornerPointerDown(e, 'ne')}
             className="absolute -top-2.5 -right-2.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--md-sys-color-primary)] shadow-sm cursor-nesw-resize pointer-events-auto hover:scale-125 transition-transform"
             title="サイズ変更 (右上)"
           />
           {/* Bottom-Right SE */}
           <div
+            data-transform-handle="true"
             onPointerDown={(e) => handleCornerPointerDown(e, 'se')}
             className="absolute -bottom-2.5 -right-2.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--md-sys-color-primary)] shadow-sm cursor-nwse-resize pointer-events-auto hover:scale-125 transition-transform"
             title="サイズ変更 (右下)"
           />
           {/* Bottom-Left SW */}
           <div
+            data-transform-handle="true"
             onPointerDown={(e) => handleCornerPointerDown(e, 'sw')}
             className="absolute -bottom-2.5 -left-2.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--md-sys-color-primary)] shadow-sm cursor-nesw-resize pointer-events-auto hover:scale-125 transition-transform"
             title="サイズ変更 (左下)"
           />
 
           {/* Rotation Handle (Stems upward) */}
-          <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto">
+          <div
+            data-transform-handle="true"
+            className="absolute -top-7 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto"
+          >
             <div
+              data-transform-handle="true"
               onPointerDown={handleRotatePointerDown}
               className="w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--md-sys-color-primary)] shadow-sm cursor-grab active:cursor-grabbing hover:scale-125 transition-transform"
               title="ドラッグして回転"

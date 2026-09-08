@@ -5,6 +5,8 @@ import { NavigationRail } from './NavigationRail';
 import { M3Button } from './M3Button';
 import { M3Icon } from './M3Icon';
 import { M3Dialog } from './M3Dialog';
+import { ShareOnXDialog } from './ShareOnXDialog';
+import { GradecoLogo } from './GradecoLogo';
 import { NavigationTab, SavedProject } from '../types';
 import { getAllProjects, deleteProject, toggleFavorite, clearAllProjects } from '../services/db';
 import { getGradientCss } from '../utils/gradientUtils';
@@ -32,6 +34,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   // Dialog states for deleting
   const [projectToDelete, setProjectToDelete] = useState<SavedProject | null>(null);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
+  const [showShareOnXDialog, setShowShareOnXDialog] = useState(false);
 
   const loadProjects = async () => {
     try {
@@ -169,13 +172,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
                 className="flex flex-col items-center select-none mb-6 sm:mb-7 mt-2 sm:mt-0"
               >
-                <div className="flex items-center gap-3">
-                  <div
-                    id="brand-logo-badge"
-                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-[14px] bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] flex items-center justify-center shadow-sm shrink-0"
-                  >
-                    <Palette className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]" />
-                  </div>
+                <div className="flex items-center gap-3.5">
+                  <GradecoLogo size={46} badgeClassName="shadow-md" />
                   <h1
                     id="brand-title"
                     className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-[-0.035em] text-[var(--md-sys-color-on-surface)]"
@@ -425,6 +423,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </p>
                 </div>
               )}
+
+              {/* Home Screen Bottom X Share Section */}
+              <div className="mt-8 mb-4 pt-4 border-t border-[var(--md-sys-color-outline-variant)]/20 w-full max-w-2xl flex flex-col sm:flex-row items-center justify-between gap-3 px-2">
+                <div className="flex items-center gap-3 text-left">
+                  <div className="w-9 h-9 rounded-full bg-black text-white dark:bg-white dark:text-black flex items-center justify-center font-bold text-sm shadow-2xs shrink-0">
+                    𝕏
+                  </div>
+                  <div>
+                    <span className="text-[13px] font-bold text-[var(--md-sys-color-on-surface)] block leading-snug">
+                      GradecoをX（Twitter）でシェア
+                    </span>
+                    <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] block">
+                      グラデーション＆動く背景ジェネレーターをフォロワーに共有
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowShareOnXDialog(true)}
+                  className="px-4 py-2 rounded-full bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition active:scale-95 shrink-0"
+                  title="X（旧Twitter）で共有"
+                >
+                  <span className="font-bold text-[13px] leading-none">𝕏</span>
+                  <span>Xで共有する</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -631,6 +656,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </div>
         )}
       </main>
+
+      {/* Share on X Dialog for Home Screen */}
+      <ShareOnXDialog
+        isOpen={showShareOnXDialog}
+        onClose={() => setShowShareOnXDialog(false)}
+      />
     </div>
   );
 };
