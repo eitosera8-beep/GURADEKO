@@ -21,6 +21,7 @@ const NAV_ITEMS: NavItemConfig[] = [
   { tab: 'search', icon: 'search', label: '検索' },
   { tab: 'favorite', icon: 'favorite', label: '保存' },
   { tab: 'settings', icon: 'settings', label: '設定' },
+  { tab: 'developer', icon: 'person', label: '開発者' },
 ];
 
 export const NavigationRail: React.FC<NavigationRailProps> = ({
@@ -45,7 +46,7 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({
           <GradecoLogo size={38} />
         </button>
 
-        <div className="flex flex-col items-center gap-6 w-full">
+        <div className="flex flex-col items-center gap-4 sm:gap-5 w-full">
           {NAV_ITEMS.map((item) => {
             const isSelected = currentTab === item.tab;
             return (
@@ -93,7 +94,7 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({
 
       {/* Mobile: Bottom Navigation Bar */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 h-[68px] bg-[var(--md-sys-color-surface-container)] border-t border-[var(--md-sys-color-outline-variant)]/30 flex items-center justify-around px-3 z-40 select-none shadow-[0_-2px_10px_rgba(0,0,0,0.06)]"
+        className="md:hidden fixed bottom-0 left-0 right-0 h-[68px] bg-[var(--md-sys-color-surface-container)] border-t border-[var(--md-sys-color-outline-variant)]/30 flex items-center justify-around px-1 sm:px-2 z-40 select-none shadow-[0_-2px_10px_rgba(0,0,0,0.06)]"
         aria-label="ボトムナビゲーションバー"
       >
         {NAV_ITEMS.map((item) => {
@@ -105,7 +106,7 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({
               onClick={() => onTabChange(item.tab)}
               className="flex-1 flex flex-col items-center justify-center h-full py-1 outline-none cursor-pointer group"
             >
-              <div className="relative w-[60px] h-[32px] flex items-center justify-center">
+              <div className="relative w-[50px] sm:w-[58px] h-[32px] flex items-center justify-center">
                 {isSelected && (
                   <motion.div
                     layoutId="railIndicatorMobile"

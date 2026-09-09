@@ -8,6 +8,8 @@ import { M3Dialog } from './M3Dialog';
 import { ShareOnXDialog } from './ShareOnXDialog';
 import { GradecoLogo } from './GradecoLogo';
 import { RenameProjectDialog } from './RenameProjectDialog';
+import { DeveloperTab } from './DeveloperTab';
+import { DeveloperAvatar } from './DeveloperAvatar';
 import { NavigationTab, SavedProject, AppSettings } from '../types';
 import {
   getAllProjects,
@@ -1091,8 +1093,44 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <span>オフライン・PWA対応</span>
                 </div>
               </div>
+
+              {/* 6. 開発者情報リンク */}
+              <div className="rounded-[20px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/30 p-4 sm:p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <DeveloperAvatar size="md" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[14px] sm:text-[15px] font-semibold text-[var(--md-sys-color-on-surface)]">
+                          開発者：野生のわに
+                        </span>
+                        <span className="text-xs font-mono text-[var(--md-sys-color-primary)]">
+                          @Yaseino_Wani
+                        </span>
+                      </div>
+                      <p className="text-[11px] sm:text-[12px] text-[var(--md-sys-color-on-surface-variant)] truncate">
+                        気ままにサイト作ってます • Xで活動中
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('developer')}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)] hover:bg-[var(--md-sys-color-surface-container-high)] text-xs font-semibold text-[var(--md-sys-color-on-surface)] transition cursor-pointer shrink-0"
+                  >
+                    <span>開発者ページ</span>
+                    <M3Icon name="arrow_forward" size={14} />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
+        )}
+
+        {/* Tab 5: 開発者 (Developer) */}
+        {activeTab === 'developer' && (
+          <DeveloperTab onShareOnX={() => setShowShareOnXDialog(true)} />
         )}
       </main>
 

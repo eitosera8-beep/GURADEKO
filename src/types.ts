@@ -1,6 +1,6 @@
 export type ScreenMode = 'home' | 'create' | 'editor';
 
-export type NavigationTab = 'home' | 'search' | 'favorite' | 'settings';
+export type NavigationTab = 'home' | 'search' | 'favorite' | 'settings' | 'developer';
 
 export type CreationType = 'image' | 'video';
 
