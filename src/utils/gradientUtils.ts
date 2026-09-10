@@ -23,35 +23,37 @@ export const VIDEO_MOTION_PRESETS = [
 export function getVideoMotionStyle(
   motionStyle: VideoMotionStyle = 'aurora',
   speed = 1,
-  isPlaying = true
+  isPlaying = true,
+  easing: string = 'ease-in-out'
 ): CSSProperties {
   if (!isPlaying) return {};
   const baseDuration = 8 / (speed || 1);
+  const ease = easing || 'ease-in-out';
   switch (motionStyle) {
     case 'aurora':
       return {
-        animation: `gradeco-aurora ${baseDuration}s ease-in-out infinite alternate`,
+        animation: `gradeco-aurora ${baseDuration}s ${ease} infinite alternate`,
       };
     case 'pulse':
       return {
-        animation: `gradeco-pulse ${baseDuration * 0.75}s ease-in-out infinite`,
+        animation: `gradeco-pulse ${baseDuration * 0.75}s ${ease} infinite`,
       };
     case 'colorCycle':
       return {
-        animation: `gradeco-color-cycle ${baseDuration * 1.2}s linear infinite`,
+        animation: `gradeco-color-cycle ${baseDuration * 1.2}s ${ease} infinite`,
       };
     case 'neonFlow':
       return {
         backgroundSize: '200% 200%',
-        animation: `gradeco-neon-flow ${baseDuration}s ease infinite`,
+        animation: `gradeco-neon-flow ${baseDuration}s ${ease} infinite`,
       };
     case 'drift':
       return {
-        animation: `gradeco-drift ${baseDuration * 1.5}s linear infinite`,
+        animation: `gradeco-drift ${baseDuration * 1.5}s ${ease} infinite`,
       };
     case 'zoomGlow':
       return {
-        animation: `gradeco-zoom-glow ${baseDuration * 0.8}s ease-in-out infinite alternate`,
+        animation: `gradeco-zoom-glow ${baseDuration * 0.8}s ${ease} infinite alternate`,
       };
     default:
       return {};
@@ -326,8 +328,8 @@ export function generateSvgString(
       const shadowAttr = t.hasShadow !== false ? ' filter="url(#drop-shadow)"' : '';
       const rot = t.rotation ? ` rotate(${t.rotation})` : '';
       const strokeAttr =
-        t.strokeColor && t.strokeWidth
-          ? ` stroke="${t.strokeColor}" stroke-width="${Math.round(t.strokeWidth * scaleX)}" paint-order="stroke fill"`
+        t.strokeColor && t.strokeWidth && t.strokeWidth > 0
+          ? ` stroke="${t.strokeColor}" stroke-width="${Math.round(t.strokeWidth * 2 * scaleX)}" stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill"`
           : '';
 
       return `<g transform="translate(${x}, ${y})${rot}">
@@ -422,6 +424,12 @@ export async function exportCanvasImage(
     setTimeout(() => URL.revokeObjectURL(url), 2000);
     return;
   }
+
+  // Determine target dimensions (Honors custom resolution if specified)
+  const targetW = canvasConfig?.customWidth && canvasConfig.customWidth > 0 ? canvasConfig.customWidth : width;
+  const targetH = canvasConfig?.customHeight && canvasConfig.customHeight > 0 ? canvasConfig.customHeight : height;
+  width = targetW;
+  height = targetH;
 
   // Create offscreen canvas
   const canvas = document.createElement('canvas');
@@ -522,7 +530,7 @@ export async function exportCanvasImage(
 
   // Add noise if enabled
   if (filters?.noise && filters.noise > 0) {
-    applyNoiseToCanvas(ctx, width, height, (filters.noise / 100) * 0.35);
+    applyNoiseToCanvas(ctx, width, height, (filters.noise / 100) * 0.45, filters.noiseType);
   }
 
   // 1. Draw Image Layers
@@ -732,17 +740,29 @@ export async function exportCanvasImage(
   triggerDownload(dataUrl, `${filename}.${format}`);
 }
 
-function applyNoiseToCanvas(ctx: CanvasRenderingContext2D, width: number, height: number, opacity: number) {
+function applyNoiseToCanvas(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  opacity: number,
+  noiseType: 'fine' | 'medium' | 'rough' | 'paper' = 'medium'
+) {
+  const size = noiseType === 'fine' ? 64 : noiseType === 'rough' ? 256 : 128;
   const noiseCanvas = document.createElement('canvas');
-  noiseCanvas.width = 128;
-  noiseCanvas.height = 128;
+  noiseCanvas.width = size;
+  noiseCanvas.height = size;
   const nCtx = noiseCanvas.getContext('2d');
   if (!nCtx) return;
 
-  const imgData = nCtx.createImageData(128, 128);
+  const imgData = nCtx.createImageData(size, size);
   const buffer = new Uint32Array(imgData.data.buffer);
   for (let i = 0; i < buffer.length; i++) {
-    const val = (Math.random() * 255) | 0;
+    let val = (Math.random() * 255) | 0;
+    if (noiseType === 'rough') {
+      val = val > 128 ? Math.min(255, val + 50) : Math.max(0, val - 50);
+    } else if (noiseType === 'paper') {
+      val = (((Math.random() + Math.random()) * 0.5) * 255) | 0;
+    }
     buffer[i] = (255 << 24) | (val << 16) | (val << 8) | val;
   }
   nCtx.putImageData(imgData, 0, 0);

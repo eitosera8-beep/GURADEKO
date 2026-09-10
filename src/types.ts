@@ -20,9 +20,10 @@ export interface VideoConfig {
   duration: number; // 3, 5, 10, 15 (seconds)
   fps: number;      // 30 or 60
   motionStyle: VideoMotionStyle;
-  speed: number;    // 0.5, 1, 1.5, 2
+  speed: number;    // 0.25 - 4 (multiplier)
+  easing?: 'ease-in-out' | 'linear' | 'ease' | 'ease-out' | 'ease-in' | 'bounce';
   format: VideoFormat;
-  aspectPreset?: '9:16' | '16:9' | '1:1' | '4:5';
+  aspectPreset?: '9:16' | '16:9' | '1:1' | '4:5' | 'custom';
 }
 
 export type GradientType =
@@ -51,7 +52,9 @@ export interface GradientFilterConfig {
   saturation: number;  // 0 - 200 (%) default 100
   hueRotate: number;   // 0 - 360 (deg) default 0
   noise: number;       // 0 - 100 (%) default 0 (grain texture)
+  noiseType?: 'fine' | 'medium' | 'rough' | 'paper'; // grain pattern
   blur: number;        // 0 - 20 (px) default 0
+  blendMode?: 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'soft-light' | 'hard-light' | 'difference' | 'exclusion' | 'luminosity';
 }
 
 export interface TextLayer {
@@ -130,6 +133,10 @@ export interface CanvasConfig {
 
   // Canvas Frame & Aspect Ratio
   aspectRatio?: '16:9' | '1:1' | '9:16' | '4:3' | 'custom';
+  customWidth?: number;       // Custom resolution in px (e.g. 1920)
+  customHeight?: number;      // Custom resolution in px (e.g. 1080)
+  resolutionPreset?: string;  // e.g. 'fhd', '4k', 'x-header', etc.
+  lockAspectRatio?: boolean;  // 縦横比ロック
   frameBorderWidth?: number; // 枠線の太さ (0 - 24px)
   frameBorderColor?: string; // 枠線の色
   frameBorderRadius?: number;// 枠線の角丸
@@ -169,6 +176,15 @@ export interface SavedProject {
   snapshot: EditorSnapshot;
 }
 
+export interface EditorBackup {
+  version: number;
+  timestamp: number;
+  projectId: string | null;
+  projectName: string;
+  isFavorite: boolean;
+  snapshot: EditorSnapshot;
+}
+
 export interface AppSettings {
   // Appearance
   themeMode: 'system' | 'light' | 'dark';
@@ -188,6 +204,13 @@ export interface AppSettings {
 
   // Quick Color format
   colorFormat: 'hex' | 'rgb' | 'hsl';
+}
+
+export interface CustomGradientPreset {
+  id: string;
+  name: string;
+  createdAt: number;
+  gradient: GradientState;
 }
 
 

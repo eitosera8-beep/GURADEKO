@@ -15,6 +15,9 @@ interface CanvasViewportToolbarProps {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  onOpenCodeExport?: () => void;
+  onTriggerColorExtract?: () => void;
+  onOpenHelpGuide?: () => void;
 }
 
 export const CanvasViewportToolbar: React.FC<CanvasViewportToolbarProps> = ({
@@ -31,6 +34,9 @@ export const CanvasViewportToolbar: React.FC<CanvasViewportToolbarProps> = ({
   canRedo,
   onUndo,
   onRedo,
+  onOpenCodeExport,
+  onTriggerColorExtract,
+  onOpenHelpGuide,
 }) => {
   return (
     <div className="flex items-center justify-between gap-1 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full bg-[var(--md-sys-color-surface-container-highest)]/90 backdrop-blur-md border border-[var(--md-sys-color-outline-variant)]/40 shadow-sm text-xs text-[var(--md-sys-color-on-surface)] select-none max-w-full overflow-x-auto">
@@ -110,6 +116,47 @@ export const CanvasViewportToolbar: React.FC<CanvasViewportToolbarProps> = ({
         <M3Icon name="grid_4x4" size={14} />
         <span>ガイド</span>
       </button>
+
+      {/* Optional Color Extractor Trigger */}
+      {onTriggerColorExtract && (
+        <button
+          type="button"
+          onClick={onTriggerColorExtract}
+          className="px-2 py-0.5 rounded-full text-[11px] font-medium flex items-center gap-1 text-[var(--md-sys-color-on-surface-variant)] hover:bg-[var(--md-sys-color-surface-container-high)] hover:text-[var(--md-sys-color-primary)] transition cursor-pointer"
+          title="画像からカラーパレットを自動抽出"
+        >
+          <M3Icon name="colorize" size={14} />
+          <span className="hidden sm:inline">画像から抽出</span>
+        </button>
+      )}
+
+      {/* Optional Code Export Trigger */}
+      {onOpenCodeExport && (
+        <button
+          type="button"
+          onClick={onOpenCodeExport}
+          className="px-2 py-0.5 rounded-full text-[11px] font-medium flex items-center gap-1 text-[var(--md-sys-color-on-surface-variant)] hover:bg-[var(--md-sys-color-surface-container-high)] hover:text-[var(--md-sys-color-primary)] transition cursor-pointer"
+          title="CSS / Tailwind / React コード出力"
+        >
+          <M3Icon name="code" size={14} />
+          <span className="hidden sm:inline">コード出力</span>
+        </button>
+      )}
+
+      {/* Beginner Guide Trigger */}
+      {onOpenHelpGuide && (
+        <button
+          type="button"
+          onClick={onOpenHelpGuide}
+          className="px-2 py-0.5 rounded-full text-[11px] font-semibold flex items-center gap-1 text-[var(--md-sys-color-primary)] bg-[var(--md-sys-color-primary-container)]/50 hover:bg-[var(--md-sys-color-primary-container)] transition cursor-pointer"
+          title="初めての方向け使い方ガイド"
+        >
+          <M3Icon name="lightbulb" size={14} />
+          <span className="hidden sm:inline">ガイド</span>
+        </button>
+      )}
+
+      <div className="w-[1px] h-3.5 bg-[var(--md-sys-color-outline-variant)]/50" />
 
       {/* Fullscreen / Focus Preview toggle */}
       <button

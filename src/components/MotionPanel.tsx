@@ -1,7 +1,7 @@
 import React from 'react';
 import { M3Icon } from './M3Icon';
 import { M3Dropdown } from './M3Dropdown';
-import { CanvasConfig, VideoMotionStyle, VideoFormat, CreationType } from '../types';
+import { CanvasConfig, VideoMotionStyle, VideoFormat } from '../types';
 import { VIDEO_MOTION_PRESETS } from '../utils/gradientUtils';
 
 interface MotionPanelProps {
@@ -26,6 +26,7 @@ export const MotionPanel: React.FC<MotionPanelProps> = ({
     fps: 30,
     motionStyle: 'aurora' as VideoMotionStyle,
     speed: 1,
+    easing: 'ease-in-out' as const,
     format: 'mp4' as VideoFormat,
     aspectPreset: '9:16' as const,
   };
@@ -39,6 +40,13 @@ export const MotionPanel: React.FC<MotionPanelProps> = ({
       },
     });
   };
+
+  const easingOptions = [
+    { id: 'ease-in-out', label: '滑らか (Ease In-Out)' },
+    { id: 'linear', label: '等速 (Linear)' },
+    { id: 'ease-out', label: '減速 (Ease Out)' },
+    { id: 'ease-in', label: '加速 (Ease In)' },
+  ];
 
   return (
     <div className="flex flex-col gap-3.5 text-xs">
@@ -68,20 +76,63 @@ export const MotionPanel: React.FC<MotionPanelProps> = ({
           </div>
         </div>
 
-        {/* Speed chips */}
-        <div className="flex items-center bg-[var(--md-sys-color-surface-container)] rounded-full p-0.5 border border-[var(--md-sys-color-outline-variant)]/40">
-          {[0.5, 1.0, 1.5, 2.0].map((s) => (
+        <span className="font-mono text-[11px] font-bold text-[var(--md-sys-color-primary)]">
+          {videoConfig.speed || 1}x 速
+        </span>
+      </div>
+
+      {/* Speed Slider & Fine Controls */}
+      <div className="p-3 rounded-[16px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/30">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[11px] font-bold text-[var(--md-sys-color-on-surface)]">
+            アニメーション再生速度
+          </span>
+          <div className="flex items-center gap-1">
+            {[0.5, 1.0, 1.5, 2.0].map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => handleUpdateVideo({ speed: s })}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-mono cursor-pointer transition ${
+                  (videoConfig.speed || 1) === s
+                    ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] font-bold'
+                    : 'bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface-variant)]'
+                }`}
+              >
+                {s}x
+              </button>
+            ))}
+          </div>
+        </div>
+        <input
+          type="range"
+          min="0.25"
+          max="3.0"
+          step="0.1"
+          value={videoConfig.speed || 1}
+          onChange={(e) => handleUpdateVideo({ speed: Number(e.target.value) })}
+          className="w-full accent-[var(--md-sys-color-primary)] cursor-pointer h-1.5"
+        />
+      </div>
+
+      {/* Easing Curves (加減速) */}
+      <div className="p-3 rounded-[16px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/30">
+        <span className="text-[11px] font-bold text-[var(--md-sys-color-on-surface)] block mb-1.5">
+          イージング・加減速カーブ
+        </span>
+        <div className="grid grid-cols-2 gap-1.5">
+          {easingOptions.map((opt) => (
             <button
-              key={s}
+              key={opt.id}
               type="button"
-              onClick={() => handleUpdateVideo({ speed: s })}
-              className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-medium transition cursor-pointer ${
-                (videoConfig.speed || 1) === s
-                  ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]'
-                  : 'text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-on-surface)]'
+              onClick={() => handleUpdateVideo({ easing: opt.id as any })}
+              className={`p-2 rounded-xl text-left border cursor-pointer transition ${
+                (videoConfig.easing || 'ease-in-out') === opt.id
+                  ? 'bg-[var(--md-sys-color-primary-container)] border-[var(--md-sys-color-primary)] text-[var(--md-sys-color-primary)] font-bold'
+                  : 'bg-[var(--md-sys-color-surface)] border-[var(--md-sys-color-outline-variant)]/30 text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-on-surface)]'
               }`}
             >
-              {s}x
+              <div className="text-[10px] truncate">{opt.label}</div>
             </button>
           ))}
         </div>

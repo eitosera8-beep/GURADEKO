@@ -9,8 +9,7 @@ import { ShareOnXDialog } from './ShareOnXDialog';
 import { GradecoLogo } from './GradecoLogo';
 import { RenameProjectDialog } from './RenameProjectDialog';
 import { DeveloperTab } from './DeveloperTab';
-import { DeveloperAvatar } from './DeveloperAvatar';
-import { NavigationTab, SavedProject, AppSettings } from '../types';
+import { NavigationTab, SavedProject, AppSettings, EditorBackup } from '../types';
 import {
   getAllProjects,
   deleteProject,
@@ -27,6 +26,13 @@ import {
   subscribeToSettingsChange,
 } from '../services/settings';
 import { getGradientCss } from '../utils/gradientUtils';
+import {
+  getEditorBackup,
+  clearEditorBackup,
+  backupToSavedProject,
+  formatBackupTime,
+  BACKUP_UPDATED_EVENT,
+} from '../services/backup';
 
 interface HomeScreenProps {
   onNavigateCreate: (type?: 'image' | 'video') => void;
@@ -50,6 +56,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   // App Settings State
   const [appSettings, setAppSettings] = useState<AppSettings>(() => getAppSettings());
+
+  // Active Auto-Backup State in LocalStorage
+  const [activeBackup, setActiveBackup] = useState<EditorBackup | null>(() => getEditorBackup());
+
+  useEffect(() => {
+    const handleBackupChange = () => {
+      setActiveBackup(getEditorBackup());
+    };
+    window.addEventListener(BACKUP_UPDATED_EVENT, handleBackupChange);
+    window.addEventListener('storage', handleBackupChange);
+    return () => {
+      window.removeEventListener(BACKUP_UPDATED_EVENT, handleBackupChange);
+      window.removeEventListener('storage', handleBackupChange);
+    };
+  }, []);
+
+  const handleRestoreBackup = () => {
+    if (!activeBackup) return;
+    onOpenProject(backupToSavedProject(activeBackup));
+  };
+
+  const handleDiscardBackup = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    clearEditorBackup();
+    setActiveBackup(null);
+    setMessage('作業中のバックアップを破棄しました');
+    setTimeout(() => setMessage(null), 3000);
+  };
 
   // Dialog states for deleting, renaming & sharing
   const [projectToDelete, setProjectToDelete] = useState<SavedProject | null>(null);
@@ -367,6 +401,67 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <p className="text-[var(--md-sys-color-on-surface-variant)] text-[13px] sm:text-[14px] max-w-md mb-6 sm:mb-8 px-2">
                 直感的な操作で美しいグラデーション・タイポグラフィの画像とモーション動画を制作。高画質形式で即座にエクスポートできます。
               </p>
+
+              {/* Active Auto-Backup Recovery Card */}
+              {activeBackup && (
+                <div className="w-full max-w-4xl text-left mb-6">
+                  <div className="rounded-[22px] bg-gradient-to-r from-[var(--md-sys-color-primary-container)]/35 via-[var(--md-sys-color-surface-container-high)] to-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-primary)]/40 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                      <div
+                        className="w-14 h-14 sm:w-16 sm:h-16 rounded-[16px] shadow-xs border border-[var(--md-sys-color-outline-variant)]/40 shrink-0 relative overflow-hidden flex items-center justify-center cursor-pointer hover:scale-105 transition-transform"
+                        style={{ background: getGradientCss(activeBackup.snapshot.gradient) }}
+                        onClick={handleRestoreBackup}
+                        title="クリックして作業を再開"
+                      >
+                        {activeBackup.snapshot.textLayers.length > 0 && (
+                          <span className="text-[10px] font-bold text-white drop-shadow truncate px-1 text-center">
+                            {activeBackup.snapshot.textLayers[0].text}
+                          </span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] flex items-center gap-1.5 shadow-2xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                            作業中の自動バックアップ
+                          </span>
+                          <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] flex items-center gap-1">
+                            <M3Icon name="schedule" size={13} />
+                            {formatBackupTime(activeBackup.timestamp)}
+                          </span>
+                        </div>
+                        <h3 className="text-[15px] sm:text-[16px] font-bold text-[var(--md-sys-color-on-surface)] truncate">
+                          {activeBackup.projectName}
+                        </h3>
+                        <p className="text-[12px] text-[var(--md-sys-color-on-surface-variant)] truncate mt-0.5">
+                          {activeBackup.snapshot.canvasConfig.creationType === 'video' ? '動画' : '静止画'}デザイン
+                          {activeBackup.snapshot.textLayers.length > 0 && ` • テキスト${activeBackup.snapshot.textLayers.length}件`}
+                          {activeBackup.snapshot.imageLayers && activeBackup.snapshot.imageLayers.length > 0 && ` • 画像${activeBackup.snapshot.imageLayers.length}件`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[var(--md-sys-color-outline-variant)]/20">
+                      <button
+                        type="button"
+                        onClick={handleDiscardBackup}
+                        className="px-3 py-2 rounded-xl text-xs font-medium text-[var(--md-sys-color-outline)] hover:text-[var(--md-sys-color-error)] hover:bg-[var(--md-sys-color-error-container)]/30 transition-colors cursor-pointer"
+                        title="バックアップを破棄"
+                      >
+                        破棄
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRestoreBackup}
+                        className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] hover:brightness-105 active:scale-95 text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                      >
+                        <M3Icon name="restore" size={16} />
+                        <span>作業を再開・復元</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Projects List or Empty State */}
               {projects.length > 0 ? (
@@ -1031,8 +1126,47 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 </div>
 
                 <p className="text-[13px] text-[var(--md-sys-color-on-surface-variant)] mb-4 leading-relaxed">
-                  作成したグラデーション作品はブラウザ内部（IndexedDB）に安全に保存されています。別の端末へ移行したい場合やバックアップとしてJSONファイルを書き出し・復元できます。
+                  作成したグラデーション作品はブラウザ内部（IndexedDB）に安全に保存されています。また作業中の編集データはLocalStorageへリアルタイムに自動バックアップされ、再読み込み時も即座に復元できます。
                 </p>
+
+                {/* LocalStorage Auto-Backup Status Block in Settings */}
+                <div className="p-3.5 mb-4 rounded-xl bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)]/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <M3Icon name="cloud_done" size={16} className="text-emerald-600 dark:text-emerald-400" />
+                      <span className="text-xs font-bold text-[var(--md-sys-color-on-surface)]">
+                        LocalStorage 自動バックアップ
+                      </span>
+                      <span className="text-[10px] font-semibold px-2 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+                        有効
+                      </span>
+                    </div>
+                    <p className="text-xs text-[var(--md-sys-color-on-surface-variant)] truncate">
+                      {activeBackup
+                        ? `現在「${activeBackup.projectName}」をバックアップ中 (${formatBackupTime(activeBackup.timestamp)})`
+                        : '現在保存中の作業バックアップはありません'}
+                    </p>
+                  </div>
+                  {activeBackup && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleDiscardBackup}
+                        className="px-2.5 py-1 rounded-lg text-xs text-[var(--md-sys-color-outline)] hover:text-[var(--md-sys-color-error)] hover:bg-[var(--md-sys-color-error-container)]/30 transition-colors cursor-pointer"
+                      >
+                        バックアップ消去
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRestoreBackup}
+                        className="px-3 py-1 rounded-lg bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] text-xs font-semibold hover:brightness-105 transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <M3Icon name="restore" size={14} />
+                        <span>復元</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                   <button
@@ -1098,7 +1232,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <div className="rounded-[20px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/30 p-4 sm:p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <DeveloperAvatar size="md" />
+                    <div className="w-9 h-9 rounded-xl bg-[var(--md-sys-color-primary-container)] flex items-center justify-center text-[var(--md-sys-color-on-primary-container)] shrink-0">
+                      <M3Icon name="person" size={20} />
+                    </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[14px] sm:text-[15px] font-semibold text-[var(--md-sys-color-on-surface)]">

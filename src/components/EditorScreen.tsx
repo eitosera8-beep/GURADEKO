@@ -21,6 +21,7 @@ import {
   GradientFilterConfig,
   VideoFormat,
   VideoMotionStyle,
+  CustomGradientPreset,
 } from '../types';
 import {
   getGradientCss,
@@ -47,6 +48,11 @@ import { ShareOnXDialog } from './ShareOnXDialog';
 import { GradecoLogo } from './GradecoLogo';
 import { SaveProjectDialog } from './SaveProjectDialog';
 import { getAppSettings, formatExportFileName } from '../services/settings';
+import { CssExportModal } from './CssExportModal';
+import { extractColorsFromImage } from '../utils/colorExtractor';
+import { getMyPresets, saveMyPreset, deleteMyPreset } from '../services/myPresets';
+import { BeginnerGuideModal } from './BeginnerGuideModal';
+import { saveEditorBackup, formatBackupTime } from '../services/backup';
 
 interface EditorScreenProps {
   canvasConfig: CanvasConfig;
@@ -136,13 +142,23 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
   // Presets Dialog State
   const [showPresetsDialog, setShowPresetsDialog] = useState(false);
-  const [presetCategory, setPresetCategory] = useState<'all' | 'vivid' | 'pastel' | 'dark' | 'nature'>('all');
+  const [presetCategory, setPresetCategory] = useState<'all' | 'my' | 'vivid' | 'pastel' | 'dark' | 'nature'>('all');
+  const [myPresets, setMyPresets] = useState<CustomGradientPreset[]>(() => getMyPresets());
+  const [customPresetName, setCustomPresetName] = useState<string>('');
+
+  // CSS / Tailwind Export Modal State
+  const [showCssExportModal, setShowCssExportModal] = useState(false);
+
+  // Color Extractor State & Ref
+  const [isExtractingColor, setIsExtractingColor] = useState(false);
+  const colorFileInputRef = useRef<HTMLInputElement>(null);
 
   // Font Picker Modal State
   const [showFontPicker, setShowFontPicker] = useState(false);
 
   // Help Guide Dialog State
   const [showHelpDialog, setShowHelpDialog] = useState(false);
+  const [showBeginnerGuide, setShowBeginnerGuide] = useState(false);
 
   // History for Undo / Redo
   const [past, setPast] = useState<EditorSnapshot[]>([]);
@@ -179,9 +195,27 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   const canvasBoxRef = useRef<HTMLDivElement>(null);
 
   // Proportional box size inside right scrollable container:
-  // Base size requested: 576×416dp.
-  const boxWidth = Math.round(576 * (canvasConfig.horizontalSize / 40));
-  const boxHeight = Math.round(416 * (canvasConfig.verticalSize / 40));
+  // Dynamically adapts if custom dimensions (e.g. 1920x1080, 1080x1920, 1500x500) are configured
+  let boxWidth = Math.round(576 * (canvasConfig.horizontalSize / 40));
+  let boxHeight = Math.round(416 * (canvasConfig.verticalSize / 40));
+
+  if (
+    canvasConfig.customWidth &&
+    canvasConfig.customHeight &&
+    canvasConfig.customWidth > 0 &&
+    canvasConfig.customHeight > 0
+  ) {
+    const ratio = canvasConfig.customWidth / canvasConfig.customHeight;
+    const maxAreaW = 560;
+    const maxAreaH = 440;
+    if (ratio >= maxAreaW / maxAreaH) {
+      boxWidth = maxAreaW;
+      boxHeight = Math.max(90, Math.round(maxAreaW / ratio));
+    } else {
+      boxHeight = maxAreaH;
+      boxWidth = Math.max(90, Math.round(maxAreaH * ratio));
+    }
+  }
 
   // Zoom Fit Calculation - fits canvas perfectly inside container with zero scroll
   const handleZoomFit = useCallback((silent: boolean = false) => {
@@ -230,12 +264,108 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     }
   }, []);
 
+  // First-time beginner welcome modal
+  useEffect(() => {
+    try {
+      const hideGuide = localStorage.getItem('gradeco_hide_beginner_guide');
+      const alreadyWelcomed = sessionStorage.getItem('gradeco_welcomed');
+      if (hideGuide !== 'true' && alreadyWelcomed !== 'true') {
+        sessionStorage.setItem('gradeco_welcomed', 'true');
+        const timer = setTimeout(() => {
+          setShowBeginnerGuide(true);
+        }, 600);
+        return () => clearTimeout(timer);
+      }
+    } catch {}
+  }, []);
+
   // Preload fonts used by current text layers
   useEffect(() => {
     textLayers.forEach((l) => {
       loadGoogleFont(l.fontFamily);
     });
   }, [textLayers]);
+
+  // ==========================================
+  // Auto-backup to LocalStorage Engine
+  // ==========================================
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [lastAutoSaveTime, setLastAutoSaveTime] = useState<number>(Date.now());
+
+  // Ref holding the latest state for synchronous flush on reload/close
+  const latestBackupDataRef = useRef({
+    projectId: currentProjectId,
+    projectName,
+    isFavorite,
+    snapshot: {
+      gradient,
+      textLayers,
+      imageLayers,
+      shapeLayers,
+      canvasConfig,
+    },
+  });
+
+  // Keep latestBackupDataRef in sync with all editor states
+  useEffect(() => {
+    latestBackupDataRef.current = {
+      projectId: currentProjectId,
+      projectName,
+      isFavorite,
+      snapshot: {
+        gradient,
+        textLayers,
+        imageLayers,
+        shapeLayers,
+        canvasConfig,
+      },
+    };
+  }, [currentProjectId, projectName, isFavorite, gradient, textLayers, imageLayers, shapeLayers, canvasConfig]);
+
+  // Debounced auto-save effect whenever editor state changes
+  const hasMountedAutoSaveRef = useRef(false);
+  useEffect(() => {
+    if (!hasMountedAutoSaveRef.current) {
+      hasMountedAutoSaveRef.current = true;
+      // Backup initial state immediately
+      saveEditorBackup(latestBackupDataRef.current);
+      return;
+    }
+
+    setAutoSaveStatus('saving');
+    const timer = setTimeout(() => {
+      const success = saveEditorBackup(latestBackupDataRef.current);
+      if (success) {
+        setAutoSaveStatus('saved');
+        setLastAutoSaveTime(Date.now());
+      } else {
+        setAutoSaveStatus('error');
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [gradient, textLayers, imageLayers, shapeLayers, canvasConfig, projectName, isFavorite, currentProjectId]);
+
+  // Synchronously flush backup to localStorage on page reload or close (beforeunload)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      saveEditorBackup(latestBackupDataRef.current);
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      saveEditorBackup(latestBackupDataRef.current);
+    };
+  }, []);
+
+  // Show notice toast when an auto-backup is restored on mount
+  useEffect(() => {
+    if (initialProject?.id && initialProject.id.startsWith('backup-')) {
+      setToastMessage(`「${initialProject.name}」の作業内容を自動復元しました`);
+      setTimeout(() => setToastMessage(null), 3000);
+    }
+  }, []);
 
   // Push current state to undo history
   const pushHistory = useCallback(() => {
@@ -600,6 +730,87 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     setShowPresetsDialog(false);
     setToastMessage(`「${preset.name}」を適用しました`);
     setTimeout(() => setToastMessage(null), 2000);
+  };
+
+  // Apply Custom Saved Preset
+  const handleApplyMyPreset = (preset: CustomGradientPreset) => {
+    pushHistory();
+    const g = preset.gradient;
+    setGradient((prev) => ({
+      ...prev,
+      ...g,
+      stops:
+        g.stops && g.stops.length >= 2
+          ? g.stops
+          : [
+              { id: '1', color: g.color1, position: g.slider1 },
+              { id: '2', color: g.color2, position: g.slider2 },
+            ],
+    }));
+    setShowPresetsDialog(false);
+    setToastMessage(`マイプリセット「${preset.name}」を適用しました`);
+    setTimeout(() => setToastMessage(null), 2000);
+  };
+
+  // Save current gradient to My Presets
+  const handleSaveCurrentAsPreset = () => {
+    const name = customPresetName.trim() || `マイプリセット ${myPresets.length + 1}`;
+    const saved = saveMyPreset(name, gradient);
+    setMyPresets(getMyPresets());
+    setCustomPresetName('');
+    setToastMessage(`「${saved.name}」を保存しました`);
+    setTimeout(() => setToastMessage(null), 2000);
+  };
+
+  // Delete from My Presets
+  const handleDeleteMyPreset = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = deleteMyPreset(id);
+    setMyPresets(updated);
+    setToastMessage('マイプリセットを削除しました');
+    setTimeout(() => setToastMessage(null), 1800);
+  };
+
+  // Trigger file input for color extraction
+  const handleTriggerColorExtraction = () => {
+    colorFileInputRef.current?.click();
+  };
+
+  // Extract color palette from user-uploaded image
+  const handleColorImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsExtractingColor(true);
+    setToastMessage('画像から主要カラーを解析・抽出中...');
+    try {
+      const colors = await extractColorsFromImage(file, 4);
+      if (colors.length >= 2) {
+        pushHistory();
+        const step = Math.floor(100 / (colors.length - 1));
+        const newStops: ColorStop[] = colors.map((c, i) => ({
+          id: `extracted-${Date.now()}-${i}`,
+          color: c,
+          position: i === colors.length - 1 ? 100 : i * step,
+        }));
+        setGradient((prev) => ({
+          ...prev,
+          color1: colors[0],
+          color2: colors[1],
+          color3: colors[2] || prev.color3,
+          stops: newStops,
+        }));
+        setToastMessage(`画像から${colors.length}色のパレットを抽出・適用しました！`);
+      } else {
+        setToastMessage('画像から十分な色を抽出できませんでした');
+      }
+    } catch (err) {
+      console.error(err);
+      setToastMessage('画像からのカラー抽出でエラーが発生しました');
+    } finally {
+      setIsExtractingColor(false);
+      if (colorFileInputRef.current) colorFileInputRef.current.value = '';
+      setTimeout(() => setToastMessage(null), 2500);
+    }
   };
 
   // Add text layer at center
@@ -971,6 +1182,14 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
       setCurrentProjectId(targetId);
       setProjectName(chosenName);
       setIsFavorite(isFav);
+      saveEditorBackup({
+        projectId: targetId,
+        projectName: chosenName,
+        isFavorite: isFav,
+        snapshot: proj.snapshot,
+      });
+      setAutoSaveStatus('saved');
+      setLastAutoSaveTime(Date.now());
       setToastMessage(`「${chosenName}」を保存しました`);
     } catch (e) {
       setToastMessage('保存に失敗しました');
@@ -1102,6 +1321,18 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             ctx.shadowBlur = 8 * scaleX;
             ctx.shadowOffsetY = 3 * scaleY;
           }
+
+          // Draw Stroke (袋文字外枠) if configured
+          if (t.strokeColor && t.strokeWidth && t.strokeWidth > 0) {
+            ctx.save();
+            ctx.strokeStyle = t.strokeColor;
+            ctx.lineWidth = t.strokeWidth * 2 * scaleX;
+            ctx.lineJoin = 'round';
+            ctx.miterLimit = 2;
+            ctx.strokeText(t.text, 0, 0);
+            ctx.restore();
+          }
+
           ctx.fillStyle = t.color || '#FFFFFF';
           ctx.fillText(t.text, 0, 0);
           ctx.restore();
@@ -1541,6 +1772,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
             {[
               { id: 'all', label: 'すべて' },
+              { id: 'my', label: `★ マイプリセット (${myPresets.length})` },
               { id: 'vivid', label: '鮮やか (Vivid)' },
               { id: 'pastel', label: 'パステル (Pastel)' },
               { id: 'nature', label: '自然 (Nature)' },
@@ -1561,44 +1793,130 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             ))}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[360px] overflow-y-auto pr-1">
-            {filteredPresets.map((preset) => {
-              const bgCss = getGradientCss({
-                type: preset.type,
-                color1: preset.color1,
-                color2: preset.color2,
-                color3: preset.color3,
-                slider1: preset.slider1,
-                slider2: preset.slider2,
-                sizeSlider: 40,
-                angle: preset.angle,
-                bgOffset: { x: 0, y: 0 },
-              });
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => handleApplyPreset(preset)}
-                  className="flex flex-col text-left rounded-[14px] overflow-hidden border border-[var(--md-sys-color-outline-variant)]/40 bg-[var(--md-sys-color-surface-container)] hover:border-[var(--md-sys-color-primary)] hover:shadow-md transition-all group cursor-pointer p-1"
-                >
-                  <div
-                    className="h-18 w-full rounded-[10px] mb-1.5 shadow-2xs group-hover:scale-[1.02] transition-transform"
-                    style={{ background: bgCss }}
-                  />
-                  <div className="px-1.5 pb-1">
-                    <p className="text-[12px] font-bold text-[var(--md-sys-color-on-surface)] truncate">
-                      {preset.name}
-                    </p>
-                    <p className="text-[10px] text-[var(--md-sys-color-on-surface-variant)] capitalize">
-                      {preset.category}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          {/* Quick Save to My Presets bar when in My Presets tab */}
+          {presetCategory === 'my' && (
+            <div className="flex items-center gap-2 p-2.5 rounded-[14px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]/40">
+              <input
+                type="text"
+                value={customPresetName}
+                onChange={(e) => setCustomPresetName(e.target.value)}
+                placeholder="現在の配色を名前を付けて保存..."
+                className="flex-1 px-3 py-1.5 rounded-lg text-xs bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)]/50 focus:outline-none focus:border-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-surface)]"
+              />
+              <button
+                type="button"
+                onClick={handleSaveCurrentAsPreset}
+                className="px-3 py-1.5 rounded-lg bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] text-xs font-bold hover:brightness-105 active:scale-95 transition cursor-pointer shrink-0 flex items-center gap-1"
+              >
+                <M3Icon name="bookmark_add" size={14} />
+                <span>保存</span>
+              </button>
+            </div>
+          )}
+
+          {presetCategory === 'my' ? (
+            myPresets.length === 0 ? (
+              <div className="py-8 text-center text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                保存されたマイプリセットはありません。<br />
+                上の入力欄から現在の配色をお気に入りプリセットとして保存できます。
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[340px] overflow-y-auto pr-1">
+                {myPresets.map((preset) => {
+                  const bgCss = getGradientCss({
+                    ...preset.gradient,
+                    sizeSlider: 40,
+                    bgOffset: { x: 0, y: 0 },
+                  });
+                  return (
+                    <div
+                      key={preset.id}
+                      onClick={() => handleApplyMyPreset(preset)}
+                      className="flex flex-col text-left rounded-[14px] overflow-hidden border border-[var(--md-sys-color-outline-variant)]/40 bg-[var(--md-sys-color-surface-container)] hover:border-[var(--md-sys-color-primary)] hover:shadow-md transition-all group cursor-pointer p-1 relative"
+                    >
+                      <div
+                        className="h-18 w-full rounded-[10px] mb-1.5 shadow-2xs group-hover:scale-[1.02] transition-transform relative"
+                        style={{ background: bgCss }}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteMyPreset(preset.id, e)}
+                          className="absolute top-1 right-1 p-1 rounded-full bg-black/60 hover:bg-red-600 text-white transition cursor-pointer opacity-0 group-hover:opacity-100"
+                          title="削除"
+                        >
+                          <M3Icon name="delete" size={13} />
+                        </button>
+                      </div>
+                      <div className="px-1.5 pb-1 flex items-center justify-between">
+                        <p className="text-[12px] font-bold text-[var(--md-sys-color-on-surface)] truncate">
+                          {preset.name}
+                        </p>
+                        <span className="text-[10px] text-[var(--md-sys-color-on-surface-variant)] shrink-0">
+                          {preset.gradient.stops?.length || 2}色
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[360px] overflow-y-auto pr-1">
+              {filteredPresets.map((preset) => {
+                const bgCss = getGradientCss({
+                  type: preset.type,
+                  color1: preset.color1,
+                  color2: preset.color2,
+                  color3: preset.color3,
+                  slider1: preset.slider1,
+                  slider2: preset.slider2,
+                  sizeSlider: 40,
+                  angle: preset.angle,
+                  bgOffset: { x: 0, y: 0 },
+                });
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleApplyPreset(preset)}
+                    className="flex flex-col text-left rounded-[14px] overflow-hidden border border-[var(--md-sys-color-outline-variant)]/40 bg-[var(--md-sys-color-surface-container)] hover:border-[var(--md-sys-color-primary)] hover:shadow-md transition-all group cursor-pointer p-1"
+                  >
+                    <div
+                      className="h-18 w-full rounded-[10px] mb-1.5 shadow-2xs group-hover:scale-[1.02] transition-transform"
+                      style={{ background: bgCss }}
+                    />
+                    <div className="px-1.5 pb-1">
+                      <p className="text-[12px] font-bold text-[var(--md-sys-color-on-surface)] truncate">
+                        {preset.name}
+                      </p>
+                      <p className="text-[10px] text-[var(--md-sys-color-on-surface-variant)] capitalize">
+                        {preset.category}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </M3Dialog>
+
+      {/* Hidden file input for Color Extraction from images */}
+      <input
+        type="file"
+        ref={colorFileInputRef}
+        onChange={handleColorImageSelected}
+        accept="image/*"
+        className="hidden"
+      />
+
+      {/* CSS / Tailwind / React Code Export Modal */}
+      <CssExportModal
+        isOpen={showCssExportModal}
+        onClose={() => setShowCssExportModal(false)}
+        gradient={gradient}
+        canvasConfig={canvasConfig}
+      />
 
       {/* 50+ Japanese Font Picker Modal */}
       <FontPickerModal
@@ -1609,92 +1927,17 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         onSelectFont={handleSelectFont}
       />
 
-      {/* Help Guide Modal */}
-      <M3Dialog
-        isOpen={showHelpDialog}
-        onClose={() => setShowHelpDialog(false)}
-        title="グラデコ 使い方ガイド"
-      >
-        <div className="flex flex-col gap-3 max-h-[70vh] overflow-y-auto pr-1 text-[var(--md-sys-color-on-surface)]">
-          {/* Section 1: 静止画と動画の切り替え */}
-          <div className="p-3 rounded-[16px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/30">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 flex items-center justify-center text-xs font-bold shrink-0">
-                1
-              </span>
-              <h4 className="text-[14px] font-bold">静止画モードと動画モードの違い</h4>
-            </div>
-            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)] leading-relaxed mb-2">
-              いつでも操作パネル上部の切り替えボタンからワンクリックで切り替えられます。
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              <div className="p-2.5 rounded-[12px] bg-[var(--md-sys-color-surface)] border border-blue-200 dark:border-blue-900/50">
-                <span className="font-bold text-blue-600 dark:text-blue-400 block mb-0.5">📷 静止画モード</span>
-                <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] leading-normal">
-                  SNSアイコン、YouTubeサムネイル、Webバナーなどに最適。PNG・JPG・SVGで高画質保存。
-                </span>
-              </div>
-              <div className="p-2.5 rounded-[12px] bg-[var(--md-sys-color-surface)] border border-purple-200 dark:border-purple-900/50">
-                <span className="font-bold text-purple-600 dark:text-purple-400 block mb-0.5">🎥 動画モード</span>
-                <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] leading-normal">
-                  TikTokやリール、Shortsに使える動く背景。オーロラなどの動きを選びMP4やGIFで出力。
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 2: グラデーションの作り方 */}
-          <div className="p-3 rounded-[16px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/30">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold shrink-0">
-                2
-              </span>
-              <h4 className="text-[14px] font-bold">グラデーションの調整</h4>
-            </div>
-            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)] leading-relaxed">
-              <strong>「配色」</strong>タブで線形や放射状などの種類と基本色を選びます。<strong>「ストップ」</strong>タブでは色の分岐点を追加したり、スライダーで位置をスライドさせて滑らかな色の重なりを作れます。「プリセット」ボタンから美しい配色例をワンクリックで選ぶこともできます。
-            </p>
-          </div>
-
-          {/* Section 3: 文字や素材の自由な配置 */}
-          <div className="p-3 rounded-[16px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/30">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-xs font-bold shrink-0">
-                3
-              </span>
-              <h4 className="text-[14px] font-bold">文字と素材の配置・編集</h4>
-            </div>
-            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)] leading-relaxed mb-1.5">
-              <strong>「文字」</strong>や<strong>「素材」</strong>タブでテキストやスタンプを追加できます。
-            </p>
-            <ul className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] space-y-1 list-disc list-inside">
-              <li><strong>移動:</strong> キャンバス上の文字や素材を直接ドラッグ</li>
-              <li><strong>拡大・縮小:</strong> 要素の四隅にある白い丸ハンドルをドラッグ</li>
-              <li><strong>回転:</strong> 要素上部の回転ハンドルをドラッグ</li>
-              <li><strong>複製 / 削除:</strong> 要素を選んで「複製」「削除」ボタン、またはキーボードのDeleteキー</li>
-            </ul>
-          </div>
-
-          {/* Section 4: 保存・ダウンロード */}
-          <div className="p-3 rounded-[16px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/30">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 flex items-center justify-center text-xs font-bold shrink-0">
-                4
-              </span>
-              <h4 className="text-[14px] font-bold">保存・ダウンロード</h4>
-            </div>
-            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)] leading-relaxed">
-              画面右上の<strong>「画像保存」</strong>または<strong>「動画出力」</strong>ボタンを押すと、そのままダウンロードされます。右側の矢印メニューからMP4、WebM、GIF、PNG、JPG、SVG、CSSコードなどを目的に合わせて選ぶこともできます。
-            </p>
-          </div>
-
-          <div className="flex justify-end mt-1">
-            <M3Button variant="filled" onClick={() => setShowHelpDialog(false)}>
-              閉じる
-            </M3Button>
-          </div>
-        </div>
-      </M3Dialog>
+      {/* Beginner Guide Modal */}
+      <BeginnerGuideModal
+        isOpen={showBeginnerGuide || showHelpDialog}
+        onClose={() => {
+          setShowBeginnerGuide(false);
+          setShowHelpDialog(false);
+        }}
+        onTryRandomColor={handleRandomGradient}
+        onOpenPresets={() => setShowPresetsDialog(true)}
+        onAddSampleText={handleAddText}
+      />
 
       {/* Video Export Progress Dialog */}
       <M3Dialog
@@ -1744,7 +1987,10 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
-            onClick={onNavigateHome}
+            onClick={() => {
+              saveEditorBackup(latestBackupDataRef.current);
+              onNavigateHome();
+            }}
             className="cursor-pointer transition-transform hover:scale-105 active:scale-95 outline-none rounded-xl p-0.5 shrink-0"
             title="ホームに戻る"
           >
@@ -1778,6 +2024,29 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               className="text-[var(--md-sys-color-outline)] group-hover:text-[var(--md-sys-color-primary)] shrink-0 transition-colors"
             />
           </button>
+
+          {/* Auto-backup status indicator */}
+          <div
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium transition-all"
+            title={`ローカル自動バックアップ: 変更があるたびに安全に保存されています (${formatBackupTime(lastAutoSaveTime)})`}
+          >
+            {autoSaveStatus === 'saving' ? (
+              <div className="flex items-center gap-1.5 text-[var(--md-sys-color-primary)]">
+                <span className="w-2 h-2 rounded-full bg-[var(--md-sys-color-primary)] animate-ping shrink-0" />
+                <span className="hidden md:inline text-[11px] font-medium">自動保存中...</span>
+              </div>
+            ) : autoSaveStatus === 'saved' ? (
+              <div className="flex items-center gap-1 text-[var(--md-sys-color-on-surface-variant)]">
+                <M3Icon name="cloud_done" size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="hidden md:inline text-[11px]">自動保存済</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 text-[var(--md-sys-color-error)]">
+                <M3Icon name="cloud_off" size={14} className="shrink-0" />
+                <span className="hidden md:inline text-[11px]">保存容量注意</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Floating Toolbar */}
@@ -1789,6 +2058,11 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 icon: 'save',
                 label: '保存',
                 onClick: handleOpenSaveDialog,
+              },
+              {
+                icon: 'code',
+                label: 'コード出力',
+                onClick: () => setShowCssExportModal(true),
               },
               {
                 icon: 'undo',
@@ -1803,9 +2077,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 onClick: handleRedo,
               },
               {
-                icon: 'help_outline',
-                label: '使い方',
-                onClick: () => setShowHelpDialog(true),
+                icon: 'lightbulb',
+                label: '🔰 ガイド',
+                onClick: () => setShowBeginnerGuide(true),
               },
               {
                 icon: 'home',
@@ -1872,6 +2146,12 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       onClick: () => handleDownload('png'),
                     },
                     {
+                      label: 'コード出力 (CSS / Tailwind / React)',
+                      icon: 'terminal',
+                      description: 'モーダルでコード全体を確認・コピー',
+                      onClick: () => setShowCssExportModal(true),
+                    },
+                    {
                       label: 'CSSコードをコピー',
                       icon: 'content_copy',
                       description: 'background CSSをクリップボードへ',
@@ -1920,6 +2200,12 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       icon: 'draw',
                       description: 'ベクター形式（和文フォント対応）',
                       onClick: () => handleDownload('svg'),
+                    },
+                    {
+                      label: 'コード出力 (CSS / Tailwind / React)',
+                      icon: 'terminal',
+                      description: 'モーダルでコード全体を確認・コピー',
+                      onClick: () => setShowCssExportModal(true),
                     },
                     {
                       label: 'CSSコードをコピー',
@@ -2078,12 +2364,23 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                   {/* Top Header */}
                   <div className="shrink-0 mb-2">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-[16px] sm:text-[17px] font-bold text-[var(--md-sys-color-on-surface)]">
-                        デザイン設定
-                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[15px] sm:text-[16px] font-bold text-[var(--md-sys-color-on-surface)] truncate">
+                          デザイン設定
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowBeginnerGuide(true)}
+                          className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-primary)] hover:brightness-105 flex items-center gap-0.5 cursor-pointer transition shadow-2xs shrink-0"
+                          title="初めての方向け使い方ガイド"
+                        >
+                          <M3Icon name="lightbulb" size={13} />
+                          <span>🔰 ガイド</span>
+                        </button>
+                      </div>
 
                       {/* Quick actions */}
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={handleRandomGradient}
@@ -2091,7 +2388,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                           title="ランダム生成"
                         >
                           <M3Icon name="casino" size={15} />
-                          <span>おまかせ調色</span>
+                          <span className="hidden sm:inline">おまかせ調色</span>
                         </button>
                         <button
                           type="button"
@@ -2142,6 +2439,43 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 {/* TAB 1: Gradient Types & Core Settings */}
                 {activeTab === 'gradient' && (
                   <div className="flex flex-col gap-2.5">
+                    {/* Quick Utilities: Color Extract, My Presets, Code Export */}
+                    <div className="grid grid-cols-3 gap-1.5 p-1.5 rounded-[14px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/20">
+                      <button
+                        type="button"
+                        onClick={handleTriggerColorExtraction}
+                        disabled={isExtractingColor}
+                        className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-[10px] bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)]/30 hover:border-[var(--md-sys-color-primary)] text-[11px] font-semibold text-[var(--md-sys-color-on-surface)] transition cursor-pointer disabled:opacity-50"
+                        title="画像からカラーパレットを抽出"
+                      >
+                        <M3Icon name="colorize" size={13} className="text-[var(--md-sys-color-primary)]" />
+                        <span className="truncate">{isExtractingColor ? '抽出中' : '画像抽出'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPresetCategory('my');
+                          setShowPresetsDialog(true);
+                        }}
+                        className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-[10px] bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)]/30 hover:border-[var(--md-sys-color-primary)] text-[11px] font-semibold text-[var(--md-sys-color-on-surface)] transition cursor-pointer"
+                        title="マイプリセット一覧・保存"
+                      >
+                        <M3Icon name="bookmark" size={13} className="text-amber-500" />
+                        <span className="truncate">マイ保存</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowCssExportModal(true)}
+                        className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-[10px] bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)]/30 hover:border-[var(--md-sys-color-primary)] text-[11px] font-semibold text-[var(--md-sys-color-on-surface)] transition cursor-pointer"
+                        title="CSS/Tailwind/React コード出力"
+                      >
+                        <M3Icon name="code" size={13} className="text-emerald-500" />
+                        <span className="truncate">コード出力</span>
+                      </button>
+                    </div>
+
                     {/* 1-Click Popular Gradient Presets */}
                     <div className="p-2 rounded-[14px] bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)]/20">
                       <div className="flex items-center justify-between mb-1.5 text-[11px] font-bold text-[var(--md-sys-color-on-surface)]">
@@ -2361,9 +2695,20 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               {/* TAB 2: Multi-Stop Color Bar & Harmonies */}
               {activeTab === 'stops' && (
                 <div className="flex flex-col gap-3">
-                  <p className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] -mt-1">
-                    色の分岐点（ストップ）を追加・スライド移動して、滑らかなグラデーション階調を作成します
-                  </p>
+                  <div className="flex items-center justify-between -mt-1">
+                    <p className="text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
+                      色の分岐点（ストップ）を追加・編集
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleTriggerColorExtraction}
+                      disabled={isExtractingColor}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--md-sys-color-primary)] hover:underline cursor-pointer disabled:opacity-50"
+                    >
+                      <M3Icon name="colorize" size={13} />
+                      <span>{isExtractingColor ? '抽出中...' : '画像から色抽出'}</span>
+                    </button>
+                  </div>
                   <GradientStopsBar
                     stops={effectiveStops}
                     onChangeStops={handleStopsChange}
@@ -2553,6 +2898,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 canRedo={future.length > 0}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
+                onOpenCodeExport={() => setShowCssExportModal(true)}
+                onTriggerColorExtract={handleTriggerColorExtraction}
+                onOpenHelpGuide={() => setShowBeginnerGuide(true)}
               />
             </div>
 
@@ -2572,11 +2920,16 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                   filter: cssFilters,
                   transform: `scale(${zoomScale})`,
                   transformOrigin: 'center center',
+                  mixBlendMode:
+                    gradient.filters?.blendMode && gradient.filters.blendMode !== 'normal'
+                      ? (gradient.filters.blendMode as any)
+                      : undefined,
                   ...(isVideo
                     ? getVideoMotionStyle(
                         canvasConfig.videoConfig?.motionStyle || 'aurora',
                         canvasConfig.videoConfig?.speed || 1,
-                        isPlayingVideo
+                        isPlayingVideo,
+                        canvasConfig.videoConfig?.easing || 'ease-in-out'
                       )
                     : {}),
                 }}
@@ -2588,15 +2941,29 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 }`}
               >
                 {/* Noise Grain SVG Texture Overlay */}
-                {gradient.filters?.noise && gradient.filters.noise > 0 && (
-                  <div
-                    className="absolute inset-0 pointer-events-none mix-blend-overlay z-0"
-                    style={{
-                      opacity: (gradient.filters.noise / 100) * 0.4,
-                      backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-                    }}
-                  />
-                )}
+                {gradient.filters?.noise && gradient.filters.noise > 0 && (() => {
+                  const noiseType = gradient.filters?.noiseType || 'medium';
+                  const baseFreq =
+                    noiseType === 'fine'
+                      ? '1.2'
+                      : noiseType === 'rough'
+                      ? '0.45'
+                      : noiseType === 'paper'
+                      ? '0.65'
+                      : '0.85';
+                  const octaves = noiseType === 'paper' ? '4' : '3';
+                  const opacity =
+                    (gradient.filters.noise / 100) * (noiseType === 'rough' ? 0.5 : 0.4);
+                  return (
+                    <div
+                      className="absolute inset-0 pointer-events-none mix-blend-overlay z-0"
+                      style={{
+                        opacity,
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='${baseFreq}' numOctaves='${octaves}' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+                      }}
+                    />
+                  );
+                })()}
 
                 {/* Frame Border if configured */}
                 {canvasConfig.frameBorderWidth && canvasConfig.frameBorderWidth > 0 ? (
@@ -2632,10 +2999,44 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                   </div>
                 )}
 
-                {/* Guidance watermark / hint when no layers are added */}
+                {/* Guidance watermark / interactive helper when no layers are added */}
                 {textLayers.length === 0 && imageLayers.length === 0 && shapeLayers.length === 0 && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-white/80 text-xs sm:text-sm font-medium drop-shadow-sm px-4 text-center z-1">
-                    ドラッグで背景位置調整 / 左メニューで文字や画像を自由に追加
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-4 text-center z-1">
+                    <div className="pointer-events-auto max-w-sm px-4 py-3 rounded-2xl bg-black/45 backdrop-blur-md border border-white/20 text-white shadow-xl flex flex-col items-center gap-2 transition-all select-none">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-white/95">
+                        <M3Icon name="touch_app" size={16} className="text-cyan-300" />
+                        <span>背景ドラッグで光の位置を直感調整</span>
+                      </div>
+                      <p className="text-[11px] text-white/80 leading-normal">
+                        文字やスタンプを乗せたり、おまかせ調色でアレンジしてみよう！
+                      </p>
+                      <div className="flex items-center justify-center gap-1.5 flex-wrap pt-0.5">
+                        <button
+                          type="button"
+                          onClick={handleAddText}
+                          className="px-2.5 py-1 rounded-full bg-white/20 hover:bg-white/35 text-white text-[11px] font-bold border border-white/30 transition cursor-pointer flex items-center gap-1 shadow-xs"
+                        >
+                          <M3Icon name="title" size={13} />
+                          <span>文字を追加</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRandomGradient}
+                          className="px-2.5 py-1 rounded-full bg-white/20 hover:bg-white/35 text-white text-[11px] font-bold border border-white/30 transition cursor-pointer flex items-center gap-1 shadow-xs"
+                        >
+                          <M3Icon name="casino" size={13} />
+                          <span>おまかせ調色</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowBeginnerGuide(true)}
+                          className="px-2.5 py-1 rounded-full bg-amber-400/30 hover:bg-amber-400/45 text-amber-200 text-[11px] font-bold border border-amber-300/40 transition cursor-pointer flex items-center gap-1 shadow-xs"
+                        >
+                          <M3Icon name="lightbulb" size={13} />
+                          <span>使い方ガイド</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -2889,34 +3290,66 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                             </button>
                           </div>
                         ) : (
-                          <span
-                            onDoubleClick={(e) => {
-                              e.stopPropagation();
-                              setEditingTextId(layer.id);
-                            }}
-                            style={{
-                              fontFamily: `"${layer.fontFamily || 'Noto Sans JP'}", sans-serif`,
-                              fontSize: `${layer.fontSize || 32}px`,
-                              fontWeight: layer.fontWeight || '700',
-                              color: isGradientText ? 'transparent' : (layer.color || '#FFFFFF'),
-                              backgroundImage: isGradientText ? gradPreset!.css : undefined,
-                              WebkitBackgroundClip: isGradientText ? 'text' : undefined,
-                              backgroundClip: isGradientText ? 'text' : undefined,
-                              WebkitTextFillColor: isGradientText ? 'transparent' : undefined,
-                              WebkitTextStroke:
-                                layer.strokeWidth && layer.strokeWidth > 0
-                                  ? `${layer.strokeWidth}px ${layer.strokeColor || '#000000'}`
-                                  : undefined,
-                              textShadow: isGradientText ? undefined : shadowStyle,
-                              lineHeight: 1.25,
-                              display: 'inline-block',
-                            }}
-                            className="cursor-move select-none"
-                          >
-                            <div className="whitespace-nowrap tracking-tight select-none">
-                              {layer.text || 'テキスト'}
-                            </div>
-                          </span>
+                          (() => {
+                            const hasStroke = Boolean(layer.strokeWidth && layer.strokeWidth > 0);
+                            const strokeW = layer.strokeWidth || 0;
+                            const strokeC = layer.strokeColor || '#000000';
+
+                            return (
+                              <span
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingTextId(layer.id);
+                                }}
+                                style={{
+                                  fontFamily: `"${layer.fontFamily || 'Noto Sans JP'}", sans-serif`,
+                                  fontSize: `${layer.fontSize || 32}px`,
+                                  fontWeight: layer.fontWeight || '700',
+                                  lineHeight: 1.25,
+                                }}
+                                className="relative inline-block cursor-move select-none"
+                              >
+                                {/* Outer Stroke Layer (袋文字外枠 - 文字本体を侵食せず外側に綺麗に展開) */}
+                                {hasStroke && (
+                                  <span
+                                    aria-hidden="true"
+                                    className="absolute inset-0 select-none pointer-events-none"
+                                    style={{
+                                      WebkitTextStroke: `${strokeW * 2}px ${strokeC}`,
+                                      color: strokeC,
+                                      WebkitTextFillColor: strokeC,
+                                      paintOrder: 'stroke fill',
+                                      lineHeight: 1.25,
+                                      textShadow: shadowStyle !== 'none' ? shadowStyle : undefined,
+                                    }}
+                                  >
+                                    <div className="whitespace-nowrap tracking-tight select-none">
+                                      {layer.text || 'テキスト'}
+                                    </div>
+                                  </span>
+                                )}
+
+                                {/* Foreground Fill Layer (文字本体 - グラデーション・単色とも純粋なフォント形状を維持) */}
+                                <span
+                                  className="relative inline-block select-none"
+                                  style={{
+                                    zIndex: 1,
+                                    color: isGradientText ? 'transparent' : (layer.color || '#FFFFFF'),
+                                    backgroundImage: isGradientText ? gradPreset!.css : undefined,
+                                    WebkitBackgroundClip: isGradientText ? 'text' : undefined,
+                                    backgroundClip: isGradientText ? 'text' : undefined,
+                                    WebkitTextFillColor: isGradientText ? 'transparent' : undefined,
+                                    textShadow: !hasStroke && shadowStyle !== 'none' ? shadowStyle : undefined,
+                                    lineHeight: 1.25,
+                                  }}
+                                >
+                                  <div className="whitespace-nowrap tracking-tight select-none">
+                                    {layer.text || 'テキスト'}
+                                  </div>
+                                </span>
+                              </span>
+                            );
+                          })()
                         )}
                       </div>
                     </CanvasTransformBox>

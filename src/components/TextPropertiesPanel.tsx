@@ -53,11 +53,11 @@ export const TextPropertiesPanel: React.FC<TextPropertiesPanelProps> = ({
         </button>
 
         {selectedTextLayer && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
               onClick={() => onDuplicateText(selectedTextLayer)}
-              className="p-1.5 rounded-[8px] bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-primary-container)] hover:text-[var(--md-sys-color-primary)] transition cursor-pointer"
+              className="w-8 h-8 shrink-0 flex items-center justify-center rounded-[8px] bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-primary-container)] hover:text-[var(--md-sys-color-primary)] transition cursor-pointer"
               title="レイヤーを複製"
             >
               <M3Icon name="content_copy" size={16} />
@@ -65,7 +65,7 @@ export const TextPropertiesPanel: React.FC<TextPropertiesPanelProps> = ({
             <button
               type="button"
               onClick={() => onDeleteText(selectedTextLayer.id)}
-              className="p-1.5 rounded-[8px] bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-error)] hover:opacity-90 transition cursor-pointer"
+              className="w-8 h-8 shrink-0 flex items-center justify-center rounded-[8px] bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-error)] hover:opacity-90 transition cursor-pointer"
               title="削除"
             >
               <M3Icon name="delete" size={16} />
@@ -250,37 +250,67 @@ export const TextPropertiesPanel: React.FC<TextPropertiesPanelProps> = ({
 
           {/* Stroke / 袋文字 (Text Outline) */}
           <div className="border-t border-[var(--md-sys-color-outline-variant)]/30 pt-2">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-1">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-bold text-[var(--md-sys-color-on-surface-variant)]">
                   袋文字・縁取り (Stroke)
                 </span>
-                <span className="text-[10px] text-[var(--md-sys-color-primary)] font-mono">
+                <span className="text-[10px] text-[var(--md-sys-color-primary)] font-mono font-bold">
                   {selectedTextLayer.strokeWidth || 0}px
                 </span>
               </div>
 
-              {/* Stroke color picker */}
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input
-                  type="color"
-                  value={selectedTextLayer.strokeColor || '#000000'}
-                  onChange={(e) =>
-                    onUpdateText(selectedTextLayer.id, { strokeColor: e.target.value })
-                  }
-                  className="w-5 h-5 rounded-full border border-black/10 cursor-pointer p-0 bg-transparent"
-                />
-                <span className="text-[10px] font-mono text-[var(--md-sys-color-on-surface-variant)]">
-                  {selectedTextLayer.strokeColor || '#000000'}
-                </span>
-              </label>
+              <div className="flex items-center gap-2">
+                {/* ON / OFF Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const isCurrentlyOn = Boolean(selectedTextLayer.strokeWidth && selectedTextLayer.strokeWidth > 0);
+                    onUpdateText(selectedTextLayer.id, {
+                      strokeWidth: isCurrentlyOn ? 0 : 4,
+                      strokeColor: selectedTextLayer.strokeColor || '#000000',
+                    });
+                  }}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition cursor-pointer ${
+                    selectedTextLayer.strokeWidth && selectedTextLayer.strokeWidth > 0
+                      ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] shadow-2xs'
+                      : 'bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface-variant)] border border-[var(--md-sys-color-outline-variant)]'
+                  }`}
+                >
+                  {selectedTextLayer.strokeWidth && selectedTextLayer.strokeWidth > 0 ? 'ON' : 'OFF'}
+                </button>
+
+                {/* Stroke color picker */}
+                <label className="flex items-center gap-1 cursor-pointer" title="縁取り色を選択">
+                  <input
+                    type="color"
+                    value={selectedTextLayer.strokeColor || '#000000'}
+                    onChange={(e) => {
+                      const newCol = e.target.value;
+                      onUpdateText(selectedTextLayer.id, {
+                        strokeColor: newCol,
+                        // Auto-enable stroke with 4px if currently 0
+                        strokeWidth:
+                          selectedTextLayer.strokeWidth && selectedTextLayer.strokeWidth > 0
+                            ? selectedTextLayer.strokeWidth
+                            : 4,
+                      });
+                    }}
+                    className="w-5 h-5 rounded-full border border-black/10 cursor-pointer p-0 bg-transparent"
+                  />
+                  <span className="text-[10px] font-mono text-[var(--md-sys-color-on-surface-variant)]">
+                    {selectedTextLayer.strokeColor || '#000000'}
+                  </span>
+                </label>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Slider and direct numeric input */}
+            <div className="flex items-center gap-2 mb-1.5">
               <input
                 type="range"
                 min="0"
-                max="16"
+                max="24"
                 value={selectedTextLayer.strokeWidth || 0}
                 onChange={(e) =>
                   onUpdateText(selectedTextLayer.id, {
@@ -290,20 +320,84 @@ export const TextPropertiesPanel: React.FC<TextPropertiesPanelProps> = ({
                 }
                 className="flex-1 accent-[var(--md-sys-color-primary)] cursor-pointer h-1.5 bg-[var(--md-sys-color-surface)] rounded-lg"
               />
-              <div className="flex items-center gap-1">
-                {['#FFFFFF', '#000000', '#FDE047', '#EF4444'].map((col) => (
+              <div className="flex items-center gap-0.5">
+                <input
+                  type="number"
+                  min="0"
+                  max="40"
+                  value={selectedTextLayer.strokeWidth || 0}
+                  onChange={(e) =>
+                    onUpdateText(selectedTextLayer.id, {
+                      strokeWidth: Math.max(0, Math.min(40, Number(e.target.value) || 0)),
+                      strokeColor: selectedTextLayer.strokeColor || '#000000',
+                    })
+                  }
+                  className="w-11 h-6 px-1 text-center font-mono font-bold rounded bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)] text-xs text-[var(--md-sys-color-primary)]"
+                />
+                <span className="text-[10px] text-[var(--md-sys-color-on-surface-variant)]">px</span>
+              </div>
+            </div>
+
+            {/* Quick Thickness Presets */}
+            <div className="flex items-center justify-between gap-1 mb-1.5">
+              {[
+                { label: 'なし', val: 0 },
+                { label: '細 2px', val: 2 },
+                { label: '中 4px', val: 4 },
+                { label: '太 8px', val: 8 },
+                { label: '極太 14px', val: 14 },
+              ].map((p) => (
+                <button
+                  key={p.val}
+                  type="button"
+                  onClick={() =>
+                    onUpdateText(selectedTextLayer.id, {
+                      strokeWidth: p.val,
+                      strokeColor: selectedTextLayer.strokeColor || '#000000',
+                    })
+                  }
+                  className={`flex-1 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${
+                    (selectedTextLayer.strokeWidth || 0) === p.val
+                      ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] font-bold shadow-2xs'
+                      : 'bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-on-surface)] border border-[var(--md-sys-color-outline-variant)]/40'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Contrast Color Presets */}
+            <div className="flex items-center justify-between gap-1 pt-1 border-t border-[var(--md-sys-color-outline-variant)]/20">
+              <span className="text-[10px] text-[var(--md-sys-color-on-surface-variant)]">おすすめ色:</span>
+              <div className="flex items-center gap-1.5">
+                {[
+                  { col: '#000000', title: '黒 (最定番)' },
+                  { col: '#FFFFFF', title: '白 (ダーク背景用)' },
+                  { col: '#1E3A8A', title: '紺色' },
+                  { col: '#DC2626', title: '赤 (YouTubeサムネ風)' },
+                  { col: '#F59E0B', title: 'オレンジ' },
+                  { col: '#FACC15', title: '黄色' },
+                ].map((item) => (
                   <button
-                    key={col}
+                    key={item.col}
                     type="button"
                     onClick={() =>
                       onUpdateText(selectedTextLayer.id, {
-                        strokeColor: col,
-                        strokeWidth: selectedTextLayer.strokeWidth || 3,
+                        strokeColor: item.col,
+                        strokeWidth:
+                          selectedTextLayer.strokeWidth && selectedTextLayer.strokeWidth > 0
+                            ? selectedTextLayer.strokeWidth
+                            : 4,
                       })
                     }
-                    className="w-4 h-4 rounded-full border border-black/20 cursor-pointer hover:scale-110 transition"
-                    style={{ backgroundColor: col }}
-                    title={col}
+                    className={`w-5 h-5 rounded-full border cursor-pointer hover:scale-115 transition shadow-2xs ${
+                      selectedTextLayer.strokeColor === item.col
+                        ? 'ring-2 ring-[var(--md-sys-color-primary)] ring-offset-1'
+                        : 'border-black/20'
+                    }`}
+                    style={{ backgroundColor: item.col }}
+                    title={item.title}
                   />
                 ))}
               </div>

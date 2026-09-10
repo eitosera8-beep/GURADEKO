@@ -129,51 +129,51 @@ export const GradientStopsBar: React.FC<GradientStopsBarProps> = ({
 
       {/* Selected Stop Inspector */}
       {selectedStop && (
-        <div className="p-2.5 rounded-[14px] bg-[var(--md-sys-color-surface-container-high)] border border-[var(--md-sys-color-outline-variant)]/40 flex items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <div className="relative">
+        <div className="p-2.5 rounded-[14px] bg-[var(--md-sys-color-surface-container-high)] border border-[var(--md-sys-color-outline-variant)]/40 flex items-center gap-2.5 text-xs">
+          {/* Color preview + Hex input */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="relative flex items-center justify-center shrink-0">
               <input
                 type="color"
                 value={selectedStop.color}
                 onChange={(e) => updateStop(selectedStop.id, { color: e.target.value })}
-                className="w-7 h-7 rounded-full border border-[var(--md-sys-color-outline-variant)] cursor-pointer p-0 bg-transparent"
+                className="w-7 h-7 rounded-full border border-[var(--md-sys-color-outline-variant)] cursor-pointer p-0 bg-transparent block"
               />
             </div>
             <input
               type="text"
               value={selectedStop.color}
               onChange={(e) => updateStop(selectedStop.id, { color: e.target.value })}
-              className="w-18 h-7 px-1.5 rounded-[8px] bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)] text-xs font-mono uppercase text-[var(--md-sys-color-on-surface)]"
+              className="w-18 h-7 px-1.5 rounded-[8px] bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)] text-xs font-mono uppercase text-[var(--md-sys-color-on-surface)] focus:outline-none focus:border-[var(--md-sys-color-primary)]"
             />
           </div>
 
           {/* Position slider */}
-          <div className="flex-1 flex items-center gap-2">
-            <span className="text-[10px] text-[var(--md-sys-color-on-surface-variant)] shrink-0">位置</span>
+          <div className="flex-1 min-w-0 flex items-center gap-1.5">
+            <span className="text-[10px] text-[var(--md-sys-color-on-surface-variant)] shrink-0 font-medium">位置</span>
             <input
               type="range"
               min="0"
               max="100"
               value={Math.round(selectedStop.position)}
               onChange={(e) => updateStop(selectedStop.id, { position: Number(e.target.value) })}
-              className="flex-1 h-1.5 accent-[var(--md-sys-color-primary)] cursor-pointer"
+              className="flex-1 min-w-0 h-1.5 accent-[var(--md-sys-color-primary)] cursor-pointer my-auto"
             />
-            <span className="w-8 text-[10px] font-mono text-right text-[var(--md-sys-color-on-surface)]">
+            <span className="w-7 text-[10px] font-mono text-right text-[var(--md-sys-color-on-surface)] shrink-0">
               {Math.round(selectedStop.position)}%
             </span>
           </div>
 
-          {/* Delete button if >2 stops */}
-          {stops.length > 2 && (
-            <button
-              type="button"
-              onClick={() => removeStop(selectedStop.id)}
-              className="p-1 rounded-full text-[var(--md-sys-color-error)] hover:bg-[var(--md-sys-color-error-container)] transition cursor-pointer"
-              title="このカラーを削除"
-            >
-              <M3Icon name="delete" size={16} />
-            </button>
-          )}
+          {/* Delete button: perfectly centered, height matched (h-7 w-7), shrink-0, disabled when <= 2 stops */}
+          <button
+            type="button"
+            onClick={() => removeStop(selectedStop.id)}
+            disabled={stops.length <= 2}
+            className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full text-[var(--md-sys-color-error)] hover:bg-[var(--md-sys-color-error-container)] disabled:opacity-20 disabled:hover:bg-transparent disabled:cursor-not-allowed transition cursor-pointer"
+            title={stops.length <= 2 ? '最低2色のストップが必要です' : 'このカラーを削除'}
+          >
+            <M3Icon name="delete" size={16} />
+          </button>
         </div>
       )}
     </div>

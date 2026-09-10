@@ -149,11 +149,11 @@ export const ImagePropertiesPanel: React.FC<ImagePropertiesPanelProps> = ({
               <span>選択中の画像設定</span>
             </span>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
                 onClick={() => onDuplicateImage(selectedImage)}
-                className="p-1 rounded bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)] hover:text-[var(--md-sys-color-primary)] cursor-pointer"
+                className="w-6 h-6 shrink-0 flex items-center justify-center rounded bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)] hover:text-[var(--md-sys-color-primary)] cursor-pointer transition"
                 title="複製"
               >
                 <M3Icon name="content_copy" size={14} />
@@ -161,7 +161,7 @@ export const ImagePropertiesPanel: React.FC<ImagePropertiesPanelProps> = ({
               <button
                 type="button"
                 onClick={() => onDeleteImage(selectedImage.id)}
-                className="p-1 rounded bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-error)] hover:opacity-90 cursor-pointer"
+                className="w-6 h-6 shrink-0 flex items-center justify-center rounded bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-error)] hover:opacity-90 cursor-pointer transition"
                 title="削除"
               >
                 <M3Icon name="delete" size={14} />
@@ -352,12 +352,12 @@ export const ImagePropertiesPanel: React.FC<ImagePropertiesPanelProps> = ({
             <span className="text-[11px] font-bold text-[var(--md-sys-color-on-surface)]">
               バッジ・スタンプ設定
             </span>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               {onDuplicateShape && (
                 <button
                   type="button"
                   onClick={() => onDuplicateShape(selectedShape)}
-                  className="p-1 rounded bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)] hover:text-[var(--md-sys-color-primary)] cursor-pointer"
+                  className="w-6 h-6 shrink-0 flex items-center justify-center rounded bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)] hover:text-[var(--md-sys-color-primary)] cursor-pointer transition"
                   title="複製"
                 >
                   <M3Icon name="content_copy" size={14} />
@@ -366,7 +366,7 @@ export const ImagePropertiesPanel: React.FC<ImagePropertiesPanelProps> = ({
               <button
                 type="button"
                 onClick={() => onDeleteShape(selectedShape.id)}
-                className="p-1 rounded bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-error)] hover:opacity-90 cursor-pointer"
+                className="w-6 h-6 shrink-0 flex items-center justify-center rounded bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-error)] hover:opacity-90 cursor-pointer transition"
                 title="削除"
               >
                 <M3Icon name="delete" size={14} />

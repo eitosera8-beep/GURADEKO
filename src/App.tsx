@@ -9,26 +9,57 @@ import { ScreenMode, CanvasConfig, SavedProject } from './types';
 import { HomeScreen } from './components/HomeScreen';
 import { CreateScreen } from './components/CreateScreen';
 import { EditorScreen } from './components/EditorScreen';
+import {
+  getEditorBackup,
+  backupToSavedProject,
+  getLastScreen,
+  setLastScreen,
+} from './services/backup';
+
+const DEFAULT_CANVAS_CONFIG: CanvasConfig = {
+  verticalSize: 40,
+  horizontalSize: 40,
+  fileFormat: 'png',
+  isGenki: false,
+  creationType: 'image',
+  videoConfig: {
+    duration: 5,
+    fps: 30,
+    motionStyle: 'aurora',
+    speed: 1,
+    format: 'mp4',
+    aspectPreset: '9:16',
+  },
+};
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<ScreenMode>('home');
-  const [activeProject, setActiveProject] = useState<SavedProject | null>(null);
+  // Check if we should restore previous active editor session on reload
+  const [currentScreen, setCurrentScreen] = useState<ScreenMode>(() => {
+    const lastScreen = getLastScreen();
+    const backup = getEditorBackup();
+    if (lastScreen === 'editor' && backup) {
+      return 'editor';
+    }
+    return 'home';
+  });
 
-  // Canvas configuration from CreateScreen
-  const [canvasConfig, setCanvasConfig] = useState<CanvasConfig>({
-    verticalSize: 40,
-    horizontalSize: 40,
-    fileFormat: 'png',
-    isGenki: false,
-    creationType: 'image',
-    videoConfig: {
-      duration: 5,
-      fps: 30,
-      motionStyle: 'aurora',
-      speed: 1,
-      format: 'mp4',
-      aspectPreset: '9:16',
-    },
+  const [activeProject, setActiveProject] = useState<SavedProject | null>(() => {
+    const lastScreen = getLastScreen();
+    const backup = getEditorBackup();
+    if (lastScreen === 'editor' && backup) {
+      return backupToSavedProject(backup);
+    }
+    return null;
+  });
+
+  // Canvas configuration from CreateScreen or restored from backup
+  const [canvasConfig, setCanvasConfig] = useState<CanvasConfig>(() => {
+    const lastScreen = getLastScreen();
+    const backup = getEditorBackup();
+    if (lastScreen === 'editor' && backup?.snapshot?.canvasConfig) {
+      return backup.snapshot.canvasConfig;
+    }
+    return DEFAULT_CANVAS_CONFIG;
   });
 
   // Navigation direction for reverse-playback transitions
@@ -60,21 +91,23 @@ export default function App() {
   // Sync with browser history for system back gesture / back button
   useEffect(() => {
     // Push initial history state
-    window.history.replaceState({ screen: 'home' }, '');
+    window.history.replaceState({ screen: currentScreen }, '');
 
     const handlePopState = (event: PopStateEvent) => {
-      const stateScreen = event.state?.screen || 'home';
+      const stateScreen = (event.state?.screen || 'home') as ScreenMode;
       setNavDirection('backward');
       setCurrentScreen(stateScreen);
+      setLastScreen(stateScreen);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [currentScreen]);
 
   const navigateTo = useCallback((screen: ScreenMode, direction: 'forward' | 'backward' = 'forward') => {
     setNavDirection(direction);
     setCurrentScreen(screen);
+    setLastScreen(screen);
     window.history.pushState({ screen }, '');
   }, []);
 
