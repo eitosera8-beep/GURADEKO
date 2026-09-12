@@ -475,7 +475,159 @@ export const TextPropertiesPanel: React.FC<TextPropertiesPanelProps> = ({
             )}
           </div>
 
-          {/* Typography Controls: Weight, Shadow, Vertical Writing, Rotation */}
+          {/* Drop Shadow / 影 (個別設定) */}
+          <div className="border-t border-[var(--md-sys-color-outline-variant)]/30 pt-2">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-bold text-[var(--md-sys-color-on-surface-variant)] flex items-center gap-1">
+                <M3Icon name="shadow" size={14} />
+                <span>ドロップシャドウ (影)</span>
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateText(selectedTextLayer.id, {
+                    hasShadow: selectedTextLayer.hasShadow !== true,
+                    shadowBlur: selectedTextLayer.shadowBlur ?? 8,
+                    shadowOffsetY: selectedTextLayer.shadowOffsetY ?? 3,
+                    shadowColor: selectedTextLayer.shadowColor ?? '#000000',
+                    shadowOpacity: selectedTextLayer.shadowOpacity ?? 70,
+                  })
+                }
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold transition cursor-pointer ${
+                  selectedTextLayer.hasShadow === true
+                    ? 'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] shadow-xs'
+                    : 'bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface-variant)] border border-[var(--md-sys-color-outline-variant)]'
+                }`}
+              >
+                {selectedTextLayer.hasShadow === true ? 'ON' : 'OFF'}
+              </button>
+            </div>
+
+            {selectedTextLayer.hasShadow === true && (
+              <div className="flex flex-col gap-2 p-2 rounded-[10px] bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)]/40 text-[10px]">
+                {/* Quick Shadow Style Presets */}
+                <div className="grid grid-cols-4 gap-1">
+                  {[
+                    { label: '自然', blur: 8, offset: 3, op: 70, col: '#000000' },
+                    { label: 'くっきり', blur: 2, offset: 2, op: 90, col: '#000000' },
+                    { label: '浮遊', blur: 16, offset: 8, op: 50, col: '#000000' },
+                    { label: '白光彩', blur: 12, offset: 0, op: 90, col: '#FFFFFF' },
+                  ].map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() =>
+                        onUpdateText(selectedTextLayer.id, {
+                          shadowBlur: preset.blur,
+                          shadowOffsetY: preset.offset,
+                          shadowOpacity: preset.op,
+                          shadowColor: preset.col,
+                        })
+                      }
+                      className="py-1 px-1 rounded bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-primary-container)] hover:text-[var(--md-sys-color-primary)] font-medium transition cursor-pointer text-center"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Blur Slider */}
+                <div>
+                  <div className="flex items-center justify-between mb-0.5 text-[10px]">
+                    <span className="text-[var(--md-sys-color-on-surface-variant)]">ぼかし幅</span>
+                    <span className="font-mono text-[var(--md-sys-color-primary)]">
+                      {selectedTextLayer.shadowBlur ?? 8}px
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="24"
+                    value={selectedTextLayer.shadowBlur ?? 8}
+                    onChange={(e) =>
+                      onUpdateText(selectedTextLayer.id, { shadowBlur: Number(e.target.value) })
+                    }
+                    className="w-full accent-[var(--md-sys-color-primary)] cursor-pointer h-1 bg-[var(--md-sys-color-surface-container-high)] rounded-lg"
+                  />
+                </div>
+
+                {/* Distance / Offset Y Slider */}
+                <div>
+                  <div className="flex items-center justify-between mb-0.5 text-[10px]">
+                    <span className="text-[var(--md-sys-color-on-surface-variant)]">影の距離 (Y)</span>
+                    <span className="font-mono text-[var(--md-sys-color-primary)]">
+                      {selectedTextLayer.shadowOffsetY ?? 3}px
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-10"
+                    max="20"
+                    value={selectedTextLayer.shadowOffsetY ?? 3}
+                    onChange={(e) =>
+                      onUpdateText(selectedTextLayer.id, { shadowOffsetY: Number(e.target.value) })
+                    }
+                    className="w-full accent-[var(--md-sys-color-primary)] cursor-pointer h-1 bg-[var(--md-sys-color-surface-container-high)] rounded-lg"
+                  />
+                </div>
+
+                {/* Shadow Opacity & Color */}
+                <div className="grid grid-cols-2 gap-2 pt-0.5">
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5 text-[10px]">
+                      <span className="text-[var(--md-sys-color-on-surface-variant)]">濃さ</span>
+                      <span className="font-mono text-[var(--md-sys-color-primary)]">
+                        {selectedTextLayer.shadowOpacity ?? 70}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="10"
+                      max="100"
+                      value={selectedTextLayer.shadowOpacity ?? 70}
+                      onChange={(e) =>
+                        onUpdateText(selectedTextLayer.id, { shadowOpacity: Number(e.target.value) })
+                      }
+                      className="w-full accent-[var(--md-sys-color-primary)] cursor-pointer h-1 bg-[var(--md-sys-color-surface-container-high)] rounded-lg"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5 text-[10px]">
+                      <span className="text-[var(--md-sys-color-on-surface-variant)]">影の色</span>
+                      <span className="font-mono text-[9px] text-[var(--md-sys-color-on-surface-variant)]">
+                        {selectedTextLayer.shadowColor ?? '#000000'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="color"
+                        value={selectedTextLayer.shadowColor ?? '#000000'}
+                        onChange={(e) =>
+                          onUpdateText(selectedTextLayer.id, { shadowColor: e.target.value })
+                        }
+                        className="w-5 h-5 rounded-full border border-black/10 cursor-pointer p-0 bg-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => onUpdateText(selectedTextLayer.id, { shadowColor: '#000000' })}
+                        className="w-4 h-4 rounded-full bg-black border border-white/20"
+                        title="黒"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => onUpdateText(selectedTextLayer.id, { shadowColor: '#FFFFFF' })}
+                        className="w-4 h-4 rounded-full bg-white border border-black/20"
+                        title="白光彩"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Typography Controls: Weight, Vertical Writing */}
           <div className="border-t border-[var(--md-sys-color-outline-variant)]/30 pt-2 flex flex-wrap items-center justify-between gap-1.5">
             {/* Weight */}
             <div className="flex items-center rounded-full bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)]/40 p-0.5">
@@ -510,23 +662,6 @@ export const TextPropertiesPanel: React.FC<TextPropertiesPanelProps> = ({
             >
               <M3Icon name="format_textdirection_vertical" size={13} />
               <span>縦書き</span>
-            </button>
-
-            {/* Shadow Toggle */}
-            <button
-              type="button"
-              onClick={() =>
-                onUpdateText(selectedTextLayer.id, {
-                  hasShadow: selectedTextLayer.hasShadow === false,
-                })
-              }
-              className={`px-2 py-1 rounded-[8px] text-[10px] font-medium flex items-center gap-0.5 transition cursor-pointer ${
-                selectedTextLayer.hasShadow !== false
-                  ? 'bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-primary)] font-bold'
-                  : 'bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface-variant)] border border-[var(--md-sys-color-outline-variant)]/40'
-              }`}
-            >
-              <M3Icon name="shadow" size={13} /> 影
             </button>
           </div>
 

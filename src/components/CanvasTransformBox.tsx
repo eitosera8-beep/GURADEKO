@@ -157,10 +157,14 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
       {isSelected && (
         <>
           {/* Active selection outline */}
-          <div className="absolute -inset-1.5 border-2 border-[var(--md-sys-color-primary)] rounded-[6px] pointer-events-none shadow-xs" />
+          <div
+            data-export-ignore="true"
+            className="absolute -inset-1.5 border-2 border-[var(--md-sys-color-primary)] rounded-[6px] pointer-events-none shadow-xs"
+          />
 
           {/* Floating Quick Action Toolbar (Above Element) */}
           <div
+            data-export-ignore="true"
             data-transform-handle="true"
             onPointerDown={(e) => e.stopPropagation()}
             style={{ transform: `rotate(${-rotation}deg)` }}
@@ -323,6 +327,7 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
           {/* 4 Corner Resize Handles */}
           {/* Top-Left NW */}
           <div
+            data-export-ignore="true"
             data-transform-handle="true"
             onPointerDown={(e) => handleCornerPointerDown(e, 'nw')}
             className="absolute -top-2.5 -left-2.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--md-sys-color-primary)] shadow-sm cursor-nwse-resize pointer-events-auto hover:scale-125 transition-transform"
@@ -330,6 +335,7 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
           />
           {/* Top-Right NE */}
           <div
+            data-export-ignore="true"
             data-transform-handle="true"
             onPointerDown={(e) => handleCornerPointerDown(e, 'ne')}
             className="absolute -top-2.5 -right-2.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--md-sys-color-primary)] shadow-sm cursor-nesw-resize pointer-events-auto hover:scale-125 transition-transform"
@@ -337,6 +343,7 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
           />
           {/* Bottom-Right SE */}
           <div
+            data-export-ignore="true"
             data-transform-handle="true"
             onPointerDown={(e) => handleCornerPointerDown(e, 'se')}
             className="absolute -bottom-2.5 -right-2.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--md-sys-color-primary)] shadow-sm cursor-nwse-resize pointer-events-auto hover:scale-125 transition-transform"
@@ -344,6 +351,7 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
           />
           {/* Bottom-Left SW */}
           <div
+            data-export-ignore="true"
             data-transform-handle="true"
             onPointerDown={(e) => handleCornerPointerDown(e, 'sw')}
             className="absolute -bottom-2.5 -left-2.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--md-sys-color-primary)] shadow-sm cursor-nesw-resize pointer-events-auto hover:scale-125 transition-transform"
@@ -352,10 +360,12 @@ export const CanvasTransformBox: React.FC<CanvasTransformBoxProps> = ({
 
           {/* Rotation Handle (Stems upward) */}
           <div
+            data-export-ignore="true"
             data-transform-handle="true"
             className="absolute -top-7 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto"
           >
             <div
+              data-export-ignore="true"
               data-transform-handle="true"
               onPointerDown={handleRotatePointerDown}
               className="w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--md-sys-color-primary)] shadow-sm cursor-grab active:cursor-grabbing hover:scale-125 transition-transform"

@@ -31,6 +31,7 @@ import {
   VIDEO_MOTION_PRESETS,
   getVideoMotionStyle,
 } from '../utils/gradientUtils';
+import { toPng, toJpeg, toSvg } from 'html-to-image';
 import { recordCanvasAnimation, downloadBlob } from '../utils/videoExport';
 import { GRADIENT_PRESETS, generateRandomGradient, GradientPreset } from '../utils/presets';
 import { saveProject } from '../services/db';
@@ -825,7 +826,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
       fontSize: Math.round(20 + (gradient.sizeSlider / 100) * 36),
       color: '#FFFFFF',
       fontWeight: '700',
-      hasShadow: true,
+      hasShadow: false,
       x: Math.round(boxWidth / 2),
       y: Math.round(boxHeight / 2),
     };
@@ -1203,35 +1204,118 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     const settings = getAppSettings();
     const format = formatOverride || canvasConfig.fileFormat || (settings.defaultExportFormat as any) || 'png';
     const scale = settings.defaultExportScale || 2;
-    const exportWidth = boxWidth * scale;
-    const exportHeight = boxHeight * scale;
-
     const baseName = formatExportFileName(projectName, format, settings.fileNamePattern).replace(/\.[^/.]+$/, '');
 
+    // Deselect elements temporarily so selection boxes/handles are not rendered
+    const prevSelectedText = selectedTextId;
+    const prevSelectedImg = selectedImageId;
+    const prevSelectedShape = selectedShapeId;
+    const prevEditingText = editingTextId;
+
+    setSelectedTextId(null);
+    setSelectedImageId(null);
+    setSelectedShapeId(null);
+    setEditingTextId(null);
+
     try {
-      await exportCanvasImage(
-        exportWidth,
-        exportHeight,
-        boxWidth,
-        boxHeight,
-        gradient,
-        textLayers,
-        format,
-        baseName,
-        imageLayers,
-        shapeLayers,
-        canvasConfig
-      );
+      if (typeof document !== 'undefined' && document.fonts) {
+        await document.fonts.ready;
+      }
+      // Wait one tick for React render to clear selection boxes
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      const canvasNode = canvasBoxRef.current;
+      let downloaded = false;
+
+      if (canvasNode) {
+        try {
+          const filterFn = (domNode: HTMLElement) => {
+            if (domNode.getAttribute && domNode.getAttribute('data-export-ignore') === 'true') {
+              return false;
+            }
+            if (domNode.classList && (domNode.classList.contains('cursor-nwse-resize') || domNode.classList.contains('cursor-nesw-resize'))) {
+              return false;
+            }
+            return true;
+          };
+
+          const targetW = canvasConfig?.customWidth && canvasConfig.customWidth > 0 ? canvasConfig.customWidth : boxWidth * scale;
+          const pixelRatio = Math.max(scale, Math.round(targetW / boxWidth));
+
+          let dataUrl: string;
+          if (format === 'jpg') {
+            dataUrl = await toJpeg(canvasNode, {
+              quality: 0.96,
+              pixelRatio,
+              filter: filterFn as any,
+              backgroundColor: '#FFFFFF',
+              style: {
+                transform: 'none',
+                borderRadius: `${canvasConfig.frameBorderRadius ?? 0}px`,
+              },
+            });
+          } else if (format === 'svg') {
+            dataUrl = await toSvg(canvasNode, {
+              filter: filterFn as any,
+              style: {
+                transform: 'none',
+              },
+            });
+          } else {
+            dataUrl = await toPng(canvasNode, {
+              pixelRatio,
+              filter: filterFn as any,
+              style: {
+                transform: 'none',
+                borderRadius: `${canvasConfig.frameBorderRadius ?? 0}px`,
+              },
+            });
+          }
+
+          const link = document.createElement('a');
+          link.download = `${baseName}.${format}`;
+          link.href = dataUrl;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          downloaded = true;
+        } catch (nodeErr) {
+          console.warn('DOM snapshot export failed, falling back to Canvas 2D exporter:', nodeErr);
+        }
+      }
+
+      if (!downloaded) {
+        const exportWidth = boxWidth * scale;
+        const exportHeight = boxHeight * scale;
+        await exportCanvasImage(
+          exportWidth,
+          exportHeight,
+          boxWidth,
+          boxHeight,
+          gradient,
+          textLayers,
+          format,
+          baseName,
+          imageLayers,
+          shapeLayers,
+          canvasConfig
+        );
+      }
+
       setToastMessage(`${format.toUpperCase()} (${baseName}.${format}) をダウンロードしました`);
     } catch (err) {
       console.error(err);
       setToastMessage('ダウンロード処理でエラーが発生しました');
     } finally {
+      setSelectedTextId(prevSelectedText);
+      setSelectedImageId(prevSelectedImg);
+      setSelectedShapeId(prevSelectedShape);
+      setEditingTextId(prevEditingText);
       setTimeout(() => setToastMessage(null), settings.toastDurationMs || 2500);
     }
   };
 
-  // Video Export Action
+  // Video Export Action with bright opaque background and all layers
   const handleExportVideo = async (formatOverride?: 'mp4' | 'webm' | 'gif') => {
     const format = formatOverride || canvasConfig.videoConfig?.format || 'mp4';
     const duration = canvasConfig.videoConfig?.duration || 5;
@@ -1243,15 +1327,36 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     setVideoExportProgress(0);
 
     try {
+      if (typeof document !== 'undefined' && document.fonts) {
+        await document.fonts.ready;
+      }
+
       const recCanvas = document.createElement('canvas');
       const exportW = boxWidth * 2;
       const exportH = boxHeight * 2;
       recCanvas.width = exportW;
       recCanvas.height = exportH;
-      const ctx = recCanvas.getContext('2d');
+      const ctx = recCanvas.getContext('2d', { alpha: false });
       if (!ctx) throw new Error('Could not create canvas context');
 
       const stops = getEffectiveStops(gradient);
+
+      // Preload images for export
+      const loadedImages = new Map<string, HTMLImageElement>();
+      for (const img of imageLayers) {
+        try {
+          const imgEl = new Image();
+          imgEl.crossOrigin = 'anonymous';
+          imgEl.src = img.src;
+          await new Promise((res) => {
+            imgEl.onload = res;
+            imgEl.onerror = res;
+          });
+          loadedImages.set(img.id, imgEl);
+        } catch {
+          // ignore error
+        }
+      }
 
       const renderFrame = (progress: number) => {
         let dynamicAngle = gradient.angle ?? 135;
@@ -1259,70 +1364,202 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         let scalePulse = 1;
 
         if (motionStyle === 'aurora') {
-          dynamicHue = Math.sin(progress * 2 * Math.PI) * 45;
-          dynamicAngle += Math.cos(progress * 2 * Math.PI) * 20;
+          dynamicHue = Math.sin(progress * 2 * Math.PI) * 35;
+          dynamicAngle += Math.cos(progress * 2 * Math.PI) * 25;
         } else if (motionStyle === 'pulse') {
-          scalePulse = 1 + Math.sin(progress * 2 * Math.PI) * 0.05;
+          scalePulse = 1 + Math.sin(progress * 2 * Math.PI) * 0.08;
         } else if (motionStyle === 'colorCycle') {
           dynamicHue = progress * 360;
         } else if (motionStyle === 'drift') {
           dynamicAngle += progress * 360;
         } else if (motionStyle === 'neonFlow') {
-          dynamicHue = Math.sin(progress * Math.PI) * 30;
+          dynamicHue = Math.sin(progress * Math.PI * 2) * 25;
+          dynamicAngle += Math.sin(progress * Math.PI * 2) * 15;
         } else if (motionStyle === 'zoomGlow') {
-          scalePulse = 1 + Math.sin(progress * 2 * Math.PI) * 0.08;
+          scalePulse = 1 + Math.sin(progress * 2 * Math.PI) * 0.1;
         }
 
         ctx.save();
-        ctx.clearRect(0, 0, exportW, exportH);
 
+        // 1. Fill opaque base to guarantee video is never dark/blackened
+        ctx.fillStyle = stops[0]?.color || gradient.color1 || '#FFFFFF';
+        ctx.fillRect(0, 0, exportW, exportH);
+
+        // 2. Background gradient with filters
         const filterParts: string[] = [];
         if (dynamicHue !== 0) {
           filterParts.push(`hue-rotate(${dynamicHue}deg)`);
         }
-        if (gradient.filters?.brightness && gradient.filters.brightness !== 100) filterParts.push(`brightness(${gradient.filters.brightness}%)`);
-        if (gradient.filters?.contrast && gradient.filters.contrast !== 100) filterParts.push(`contrast(${gradient.filters.contrast}%)`);
-        if (gradient.filters?.saturation && gradient.filters.saturation !== 100) filterParts.push(`saturate(${gradient.filters.saturation}%)`);
+        if (gradient.filters?.brightness !== undefined && gradient.filters.brightness !== 100) {
+          filterParts.push(`brightness(${gradient.filters.brightness}%)`);
+        }
+        if (gradient.filters?.contrast !== undefined && gradient.filters.contrast !== 100) {
+          filterParts.push(`contrast(${gradient.filters.contrast}%)`);
+        }
+        if (gradient.filters?.saturation !== undefined && gradient.filters.saturation !== 100) {
+          filterParts.push(`saturate(${gradient.filters.saturation}%)`);
+        }
         ctx.filter = filterParts.length > 0 ? filterParts.join(' ') : 'none';
 
-        const rad = (dynamicAngle * Math.PI) / 180;
-        const halfDiag = (Math.sqrt(exportW * exportW + exportH * exportH) / 2) * scalePulse;
-        const cx = exportW / 2;
-        const cy = exportH / 2;
-        const x1 = cx - Math.cos(rad) * halfDiag;
-        const y1 = cy - Math.sin(rad) * halfDiag;
-        const x2 = cx + Math.cos(rad) * halfDiag;
-        const y2 = cy + Math.sin(rad) * halfDiag;
+        const gType = gradient.type;
+        if (gType === 'radial') {
+          const cx = exportW / 2 + (gradient.bgOffset?.x || 0) * 0.15 * (exportW / 100);
+          const cy = exportH / 2 + (gradient.bgOffset?.y || 0) * 0.15 * (exportH / 100);
+          const radius = Math.max(exportW, exportH) * 0.7 * scalePulse;
+          const radGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+          stops.forEach((s) => radGrad.addColorStop(Math.min(1, Math.max(0, s.position / 100)), s.color));
+          ctx.fillStyle = radGrad;
+          ctx.fillRect(0, 0, exportW, exportH);
+        } else if (gType === 'conic') {
+          try {
+            const rad = (dynamicAngle * Math.PI) / 180;
+            const conicGrad = ctx.createConicGradient(rad, exportW / 2, exportH / 2);
+            stops.forEach((s) => conicGrad.addColorStop(Math.min(1, Math.max(0, s.position / 100)), s.color));
+            ctx.fillStyle = conicGrad;
+            ctx.fillRect(0, 0, exportW, exportH);
+          } catch {
+            ctx.fillStyle = gradient.color1 || '#FFFFFF';
+            ctx.fillRect(0, 0, exportW, exportH);
+          }
+        } else if (gType === 'mesh-aurora') {
+          ctx.fillStyle = stops[0]?.color || gradient.color1;
+          ctx.fillRect(0, 0, exportW, exportH);
 
-        const grad = ctx.createLinearGradient(x1, y1, x2, y2);
-        stops.forEach((s) => grad.addColorStop(Math.min(1, Math.max(0, s.position / 100)), s.color));
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, exportW, exportH);
+          const rad1 = ctx.createRadialGradient(0, 0, 0, 0, 0, exportW * 0.8 * scalePulse);
+          rad1.addColorStop(0, stops[1]?.color || gradient.color2);
+          rad1.addColorStop(1, 'transparent');
+          ctx.fillStyle = rad1;
+          ctx.fillRect(0, 0, exportW, exportH);
+
+          const rad2 = ctx.createRadialGradient(exportW, exportH, 0, exportW, exportH, exportW * 0.8 * scalePulse);
+          rad2.addColorStop(0, stops[2]?.color || gradient.color3 || '#89F8C7');
+          rad2.addColorStop(1, 'transparent');
+          ctx.fillStyle = rad2;
+          ctx.fillRect(0, 0, exportW, exportH);
+        } else {
+          const rad = (dynamicAngle * Math.PI) / 180;
+          const halfDiag = (Math.sqrt(exportW * exportW + exportH * exportH) / 2) * scalePulse;
+          const cx = exportW / 2;
+          const cy = exportH / 2;
+          const x1 = cx - Math.cos(rad) * halfDiag;
+          const y1 = cy - Math.sin(rad) * halfDiag;
+          const x2 = cx + Math.cos(rad) * halfDiag;
+          const y2 = cy + Math.sin(rad) * halfDiag;
+
+          const linGrad = ctx.createLinearGradient(x1, y1, x2, y2);
+          stops.forEach((s) => linGrad.addColorStop(Math.min(1, Math.max(0, s.position / 100)), s.color));
+          ctx.fillStyle = linGrad;
+          ctx.fillRect(0, 0, exportW, exportH);
+        }
 
         ctx.filter = 'none';
 
-        if (canvasConfig.frameBorderWidth && canvasConfig.frameBorderWidth > 0) {
-          ctx.strokeStyle = canvasConfig.frameBorderColor || '#FFFFFF';
-          ctx.lineWidth = canvasConfig.frameBorderWidth * 2;
-          ctx.strokeRect(0, 0, exportW, exportH);
-        }
-
         const scaleX = exportW / boxWidth;
         const scaleY = exportH / boxHeight;
+
+        // 3. Draw Image Layers
+        for (const img of imageLayers) {
+          const imgEl = loadedImages.get(img.id);
+          if (imgEl && imgEl.complete) {
+            ctx.save();
+            ctx.translate(img.x * scaleX, img.y * scaleY);
+            if (img.rotation) ctx.rotate((img.rotation * Math.PI) / 180);
+            ctx.globalAlpha = (img.opacity ?? 100) / 100;
+            const iw = img.width * scaleX;
+            const ih = img.height * scaleY;
+            if (img.hasShadow) {
+              ctx.shadowColor = 'rgba(0,0,0,0.5)';
+              ctx.shadowBlur = 10 * scaleX;
+              ctx.shadowOffsetY = 4 * scaleX;
+            }
+            ctx.drawImage(imgEl, -iw / 2, -ih / 2, iw, ih);
+            ctx.restore();
+          }
+        }
+
+        // 4. Draw Shape Layers
+        for (const s of shapeLayers) {
+          ctx.save();
+          ctx.translate(s.x * scaleX, s.y * scaleY);
+          if (s.rotation) ctx.rotate((s.rotation * Math.PI) / 180);
+          ctx.globalAlpha = (s.opacity ?? 100) / 100;
+          const sw = s.width * scaleX;
+          const sh = s.height * scaleY;
+          ctx.fillStyle = s.fillColor;
+          ctx.beginPath();
+          if (s.type === 'circle') {
+            ctx.arc(0, 0, Math.min(sw, sh) / 2, 0, Math.PI * 2);
+          } else if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(-sw / 2, -sh / 2, sw, sh, 12 * scaleX);
+          } else {
+            ctx.rect(-sw / 2, -sh / 2, sw, sh);
+          }
+          ctx.fill();
+          if (s.text) {
+            ctx.fillStyle = s.textColor || '#FFFFFF';
+            ctx.font = `900 ${Math.round(16 * scaleX)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(s.text, 0, 0);
+          }
+          ctx.restore();
+        }
+
+        // 5. Draw Text Layers
         for (const t of textLayers) {
           ctx.save();
           ctx.translate(t.x * scaleX, t.y * scaleY);
           if (t.rotation) ctx.rotate((t.rotation * Math.PI) / 180);
-          ctx.font = `${t.fontWeight || '700'} ${t.fontSize * scaleX}px '${t.fontFamily || 'Noto Sans JP'}', sans-serif`;
-          ctx.textAlign = 'center';
+          ctx.globalAlpha = (t.opacity ?? 100) / 100;
+          const fontSize = Math.max(10, Math.round(t.fontSize * scaleX));
+          ctx.font = `${t.fontWeight || '700'} ${fontSize}px "${t.fontFamily || 'Noto Sans JP'}", sans-serif`;
+          ctx.textAlign = (t.textAlign as CanvasTextAlign) || 'center';
           ctx.textBaseline = 'middle';
-          if (t.hasShadow !== false) {
-            ctx.shadowColor = 'rgba(0,0,0,0.5)';
-            ctx.shadowBlur = 8 * scaleX;
-            ctx.shadowOffsetY = 3 * scaleY;
+
+          // Background Badge (座布団)
+          if (t.backgroundColor) {
+            const tm = ctx.measureText(t.text);
+            const pad = (t.backgroundPadding ?? 8) * scaleX;
+            const bRad = (t.backgroundRadius ?? 8) * scaleX;
+            const bw = tm.width + pad * 2;
+            const bh = fontSize * 1.3 + pad * 2;
+            ctx.save();
+            ctx.fillStyle = t.backgroundColor;
+            ctx.beginPath();
+            if (typeof ctx.roundRect === 'function') {
+              ctx.roundRect(-bw / 2, -bh / 2, bw, bh, bRad);
+            } else {
+              ctx.rect(-bw / 2, -bh / 2, bw, bh);
+            }
+            ctx.fill();
+            ctx.restore();
           }
 
-          // Draw Stroke (袋文字外枠) if configured
+          // Shadow (ONLY if hasShadow === true)
+          if (t.hasShadow === true) {
+            const sBlur = typeof t.shadowBlur === 'number' ? t.shadowBlur : 8;
+            const sOffY = typeof t.shadowOffsetY === 'number' ? t.shadowOffsetY : 3;
+            const sCol = t.shadowColor || '#000000';
+            const sOp = typeof t.shadowOpacity === 'number' ? t.shadowOpacity / 100 : 0.7;
+            const shadowRgba = sCol.startsWith('#')
+              ? (() => {
+                  const hex = sCol.replace('#', '');
+                  const r = parseInt(hex.length === 3 ? hex[0] + hex[0] : hex.slice(0, 2), 16) || 0;
+                  const g = parseInt(hex.length === 3 ? hex[1] + hex[1] : hex.slice(2, 4), 16) || 0;
+                  const b = parseInt(hex.length === 3 ? hex[2] + hex[2] : hex.slice(4, 6), 16) || 0;
+                  return `rgba(${r}, ${g}, ${b}, ${sOp})`;
+                })()
+              : sCol;
+
+            ctx.shadowColor = shadowRgba;
+            ctx.shadowBlur = Math.round(sBlur * scaleX);
+            ctx.shadowOffsetY = Math.round(sOffY * scaleY);
+          } else {
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+          }
+
+          // Stroke / 袋文字
           if (t.strokeColor && t.strokeWidth && t.strokeWidth > 0) {
             ctx.save();
             ctx.strokeStyle = t.strokeColor;
@@ -1333,9 +1570,43 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             ctx.restore();
           }
 
-          ctx.fillStyle = t.color || '#FFFFFF';
+          // Fill / Gradient Text
+          if (t.gradientFill) {
+            const preset = TEXT_GRADIENT_PRESETS.find((p) => p.id === t.gradientFill);
+            const tm = ctx.measureText(t.text);
+            const textHalfW = Math.max(fontSize, tm.width / 2);
+            const grad = ctx.createLinearGradient(-textHalfW, -fontSize / 2, textHalfW, fontSize / 2);
+            if (preset) {
+              preset.colors.forEach((col, idx) =>
+                grad.addColorStop(idx / (preset.colors.length - 1), col)
+              );
+            } else {
+              grad.addColorStop(0, '#FFE066');
+              grad.addColorStop(0.5, '#F59E0B');
+              grad.addColorStop(1, '#D97706');
+            }
+            ctx.fillStyle = grad;
+          } else {
+            ctx.fillStyle = t.color || '#FFFFFF';
+          }
+
           ctx.fillText(t.text, 0, 0);
           ctx.restore();
+        }
+
+        // 6. Frame Border
+        if (canvasConfig.frameBorderWidth && canvasConfig.frameBorderWidth > 0) {
+          const bw = Math.round(canvasConfig.frameBorderWidth * scaleX);
+          const bRadius = canvasConfig.frameBorderRadius ? Math.round(canvasConfig.frameBorderRadius * scaleX) : 24;
+          ctx.strokeStyle = canvasConfig.frameBorderColor || '#FFFFFF';
+          ctx.lineWidth = bw;
+          ctx.beginPath();
+          if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(bw / 2, bw / 2, exportW - bw, exportH - bw, bRadius);
+          } else {
+            ctx.rect(bw / 2, bw / 2, exportW - bw, exportH - bw);
+          }
+          ctx.stroke();
         }
 
         ctx.restore();
@@ -2941,7 +3212,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 }`}
               >
                 {/* Noise Grain SVG Texture Overlay */}
-                {gradient.filters?.noise && gradient.filters.noise > 0 && (() => {
+                {Boolean(gradient.filters?.noise && gradient.filters.noise > 0) && (() => {
                   const noiseType = gradient.filters?.noiseType || 'medium';
                   const baseFreq =
                     noiseType === 'fine'
@@ -2966,7 +3237,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 })()}
 
                 {/* Frame Border if configured */}
-                {canvasConfig.frameBorderWidth && canvasConfig.frameBorderWidth > 0 ? (
+                {Boolean(canvasConfig.frameBorderWidth && canvasConfig.frameBorderWidth > 0) && (
                   <div
                     className="absolute inset-0 pointer-events-none z-20"
                     style={{
@@ -2975,11 +3246,12 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       boxSizing: 'border-box',
                     }}
                   />
-                ) : null}
+                )}
 
                 {/* Interactive Alignment Guides */}
-                {showGuides && activeGuideX !== null && (
+                {Boolean(showGuides && activeGuideX !== null) && (
                   <div
+                    data-export-ignore="true"
                     style={{ left: `${activeGuideX}px` }}
                     className="absolute top-0 bottom-0 w-[1.5px] bg-cyan-400 z-30 pointer-events-none shadow-[0_0_8px_rgba(34,211,238,0.8)]"
                   >
@@ -2988,55 +3260,15 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     </span>
                   </div>
                 )}
-                {showGuides && activeGuideY !== null && (
+                {Boolean(showGuides && activeGuideY !== null) && (
                   <div
+                    data-export-ignore="true"
                     style={{ top: `${activeGuideY}px` }}
                     className="absolute left-0 right-0 h-[1.5px] bg-cyan-400 z-30 pointer-events-none shadow-[0_0_8px_rgba(34,211,238,0.8)]"
                   >
                     <span className="absolute left-2 -top-3.5 bg-cyan-500 text-black font-bold text-[9px] px-1 rounded shadow-xs">
                       中央
                     </span>
-                  </div>
-                )}
-
-                {/* Guidance watermark / interactive helper when no layers are added */}
-                {textLayers.length === 0 && imageLayers.length === 0 && shapeLayers.length === 0 && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-4 text-center z-1">
-                    <div className="pointer-events-auto max-w-sm px-4 py-3 rounded-2xl bg-black/45 backdrop-blur-md border border-white/20 text-white shadow-xl flex flex-col items-center gap-2 transition-all select-none">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-white/95">
-                        <M3Icon name="touch_app" size={16} className="text-cyan-300" />
-                        <span>背景ドラッグで光の位置を直感調整</span>
-                      </div>
-                      <p className="text-[11px] text-white/80 leading-normal">
-                        文字やスタンプを乗せたり、おまかせ調色でアレンジしてみよう！
-                      </p>
-                      <div className="flex items-center justify-center gap-1.5 flex-wrap pt-0.5">
-                        <button
-                          type="button"
-                          onClick={handleAddText}
-                          className="px-2.5 py-1 rounded-full bg-white/20 hover:bg-white/35 text-white text-[11px] font-bold border border-white/30 transition cursor-pointer flex items-center gap-1 shadow-xs"
-                        >
-                          <M3Icon name="title" size={13} />
-                          <span>文字を追加</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleRandomGradient}
-                          className="px-2.5 py-1 rounded-full bg-white/20 hover:bg-white/35 text-white text-[11px] font-bold border border-white/30 transition cursor-pointer flex items-center gap-1 shadow-xs"
-                        >
-                          <M3Icon name="casino" size={13} />
-                          <span>おまかせ調色</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowBeginnerGuide(true)}
-                          className="px-2.5 py-1 rounded-full bg-amber-400/30 hover:bg-amber-400/45 text-amber-200 text-[11px] font-bold border border-amber-300/40 transition cursor-pointer flex items-center gap-1 shadow-xs"
-                        >
-                          <M3Icon name="lightbulb" size={13} />
-                          <span>使い方ガイド</span>
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 )}
 
@@ -3083,7 +3315,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                           opacity: (layer.opacity ?? 100) / 100,
                           borderRadius: `${layer.borderRadius ?? 0}px`,
                           border: layer.borderWidth ? `${layer.borderWidth}px solid ${layer.borderColor || '#FFFFFF'}` : 'none',
-                          boxShadow: layer.hasShadow !== false ? '0 6px 18px rgba(0,0,0,0.35)' : 'none',
+                          boxShadow: layer.hasShadow === true ? '0 6px 18px rgba(0,0,0,0.35)' : 'none',
                         }}
                         className={`cursor-move select-none touch-none overflow-hidden ${
                           isSelected ? '' : 'hover:ring-1 hover:ring-white/50'
@@ -3145,7 +3377,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                           borderWidth: `${layer.borderWidth || 0}px`,
                           borderStyle: layer.borderWidth ? 'solid' : 'none',
                           borderRadius: layer.type === 'circle' ? '9999px' : '9999px',
-                          boxShadow: layer.hasShadow !== false ? '0 4px 12px rgba(0,0,0,0.3)' : 'none',
+                          boxShadow: layer.hasShadow === true ? '0 4px 12px rgba(0,0,0,0.3)' : 'none',
                           opacity: (layer.opacity ?? 100) / 100,
                         }}
                         className={`cursor-move select-none touch-none flex items-center justify-center font-bold text-xs px-3 tracking-wider ${
@@ -3162,10 +3394,24 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 {textLayers.map((layer) => {
                   const isSelected = layer.id === selectedTextId;
                   const isEditing = editingTextId === layer.id;
-                  const shadowStyle =
-                    layer.hasShadow !== false
-                      ? '0 2px 10px rgba(0,0,0,0.7), 0 1px 3px rgba(0,0,0,0.9)'
-                      : 'none';
+                  const hasShadow = layer.hasShadow === true;
+                  const sBlur = typeof layer.shadowBlur === 'number' ? layer.shadowBlur : 8;
+                  const sOffY = typeof layer.shadowOffsetY === 'number' ? layer.shadowOffsetY : 3;
+                  const sCol = layer.shadowColor || '#000000';
+                  const sOp = typeof layer.shadowOpacity === 'number' ? layer.shadowOpacity / 100 : 0.7;
+                  const shadowRgba = sCol.startsWith('#')
+                    ? (() => {
+                        const hex = sCol.replace('#', '');
+                        const r = parseInt(hex.length === 3 ? hex[0] + hex[0] : hex.slice(0, 2), 16) || 0;
+                        const g = parseInt(hex.length === 3 ? hex[1] + hex[1] : hex.slice(2, 4), 16) || 0;
+                        const b = parseInt(hex.length === 3 ? hex[2] + hex[2] : hex.slice(4, 6), 16) || 0;
+                        return `rgba(${r}, ${g}, ${b}, ${sOp})`;
+                      })()
+                    : sCol;
+
+                  const shadowFilter = hasShadow
+                    ? `drop-shadow(0px ${sOffY}px ${sBlur}px ${shadowRgba})`
+                    : undefined;
 
                   const gradPreset = layer.gradientFill
                     ? TEXT_GRADIENT_PRESETS.find((p) => p.id === layer.gradientFill)
@@ -3265,7 +3511,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                               onChange={(e) => {
                                 const newTxt = e.target.value;
                                 setTextLayers((layers) =>
-                                  layers.map((t) => (t.id === layer.id ? { ...t, text: newTxt } : t))
+                                   layers.map((t) => (t.id === layer.id ? { ...t, text: newTxt } : t))
                                 );
                               }}
                               className="px-2.5 py-1 rounded-[8px] bg-black/90 text-white font-bold text-center border-2 border-[var(--md-sys-color-primary)] shadow-2xl outline-none"
@@ -3306,46 +3552,43 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                                   fontSize: `${layer.fontSize || 32}px`,
                                   fontWeight: layer.fontWeight || '700',
                                   lineHeight: 1.25,
+                                  filter: shadowFilter,
                                 }}
                                 className="relative inline-block cursor-move select-none"
                               >
-                                {/* Outer Stroke Layer (袋文字外枠 - 文字本体を侵食せず外側に綺麗に展開) */}
+                                {/* Outer Stroke Layer (袋文字外枠 - 文字の内部を塗りつぶさず境界線のみ描画) */}
                                 {hasStroke && (
                                   <span
                                     aria-hidden="true"
-                                    className="absolute inset-0 select-none pointer-events-none"
+                                    className="absolute inset-0 select-none pointer-events-none whitespace-nowrap tracking-tight"
                                     style={{
                                       WebkitTextStroke: `${strokeW * 2}px ${strokeC}`,
-                                      color: strokeC,
-                                      WebkitTextFillColor: strokeC,
+                                      WebkitTextFillColor: 'transparent',
+                                      color: 'transparent',
                                       paintOrder: 'stroke fill',
                                       lineHeight: 1.25,
-                                      textShadow: shadowStyle !== 'none' ? shadowStyle : undefined,
+                                      zIndex: 0,
                                     }}
                                   >
-                                    <div className="whitespace-nowrap tracking-tight select-none">
-                                      {layer.text || 'テキスト'}
-                                    </div>
+                                    {layer.text || 'テキスト'}
                                   </span>
                                 )}
 
-                                {/* Foreground Fill Layer (文字本体 - グラデーション・単色とも純粋なフォント形状を維持) */}
+                                {/* Foreground Fill Layer (文字本体 - 単色 or グラデーション) */}
                                 <span
-                                  className="relative inline-block select-none"
+                                  className="relative inline-block select-none whitespace-nowrap tracking-tight"
                                   style={{
                                     zIndex: 1,
-                                    color: isGradientText ? 'transparent' : (layer.color || '#FFFFFF'),
                                     backgroundImage: isGradientText ? gradPreset!.css : undefined,
+                                    background: isGradientText ? gradPreset!.css : undefined,
                                     WebkitBackgroundClip: isGradientText ? 'text' : undefined,
                                     backgroundClip: isGradientText ? 'text' : undefined,
                                     WebkitTextFillColor: isGradientText ? 'transparent' : undefined,
-                                    textShadow: !hasStroke && shadowStyle !== 'none' ? shadowStyle : undefined,
+                                    color: isGradientText ? 'transparent' : (layer.color || '#FFFFFF'),
                                     lineHeight: 1.25,
                                   }}
                                 >
-                                  <div className="whitespace-nowrap tracking-tight select-none">
-                                    {layer.text || 'テキスト'}
-                                  </div>
+                                  {layer.text || 'テキスト'}
                                 </span>
                               </span>
                             );

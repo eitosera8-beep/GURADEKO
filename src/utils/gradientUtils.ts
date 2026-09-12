@@ -319,21 +319,53 @@ export function generateSvgString(
     })
     .join('\n  ');
 
+  // Text gradient & shadow defs in SVG
+  textLayers.forEach((t) => {
+    if (t.gradientFill) {
+      const preset = TEXT_GRADIENT_PRESETS.find((p) => p.id === t.gradientFill);
+      const stops = preset
+        ? preset.colors
+            .map(
+              (c, idx) =>
+                `<stop offset="${Math.round((idx / (preset.colors.length - 1)) * 100)}%" stop-color="${c}" />`
+            )
+            .join('')
+        : '<stop offset="0%" stop-color="#FFE066" /><stop offset="100%" stop-color="#F59E0B" />';
+      defs += `
+        <linearGradient id="text-grad-${t.id}" x1="0%" y1="0%" x2="100%" y2="100%">
+          ${stops}
+        </linearGradient>
+      `;
+    }
+    if (t.hasShadow === true) {
+      const sBlur = typeof t.shadowBlur === 'number' ? t.shadowBlur : 8;
+      const sOffY = typeof t.shadowOffsetY === 'number' ? t.shadowOffsetY : 3;
+      const sCol = t.shadowColor || '#000000';
+      const sOp = typeof t.shadowOpacity === 'number' ? t.shadowOpacity / 100 : 0.7;
+      defs += `
+        <filter id="shadow-${t.id}" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="${sOffY}" stdDeviation="${Math.max(1, sBlur / 2)}" flood-color="${sCol}" flood-opacity="${sOp}"/>
+        </filter>
+      `;
+    }
+  });
+
   const textElements = textLayers
     .map((t) => {
       const x = Math.round(t.x * scaleX);
       const y = Math.round(t.y * scaleY);
       const fontSize = Math.max(10, Math.round(t.fontSize * scaleX));
       const weight = t.fontWeight || '700';
-      const shadowAttr = t.hasShadow !== false ? ' filter="url(#drop-shadow)"' : '';
+      const shadowAttr = t.hasShadow === true ? ` filter="url(#shadow-${t.id})"` : '';
       const rot = t.rotation ? ` rotate(${t.rotation})` : '';
+      const fillVal = t.gradientFill ? `url(#text-grad-${t.id})` : t.color;
       const strokeAttr =
         t.strokeColor && t.strokeWidth && t.strokeWidth > 0
           ? ` stroke="${t.strokeColor}" stroke-width="${Math.round(t.strokeWidth * 2 * scaleX)}" stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill"`
           : '';
 
       return `<g transform="translate(${x}, ${y})${rot}">
-        <text x="0" y="0" fill="${t.color}" font-family="'${t.fontFamily}', sans-serif" font-size="${fontSize}px" font-weight="${weight}" text-anchor="middle" dominant-baseline="central"${shadowAttr}${strokeAttr}>${escapeXml(t.text)}</text>
+        <text x="0" y="0" fill="${fillVal}" font-family="'${t.fontFamily}', sans-serif" font-size="${fontSize}px" font-weight="${weight}" text-anchor="middle" dominant-baseline="central"${shadowAttr}${strokeAttr}>${escapeXml(t.text)}</text>
       </g>`;
     })
     .join('\n  ');
@@ -664,11 +696,25 @@ export async function exportCanvasImage(
     }
 
     // Shadow
-    if (t.hasShadow !== false) {
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-      ctx.shadowBlur = Math.round(8 * scaleX);
+    if (t.hasShadow === true) {
+      const sBlur = typeof t.shadowBlur === 'number' ? t.shadowBlur : 8;
+      const sOffY = typeof t.shadowOffsetY === 'number' ? t.shadowOffsetY : 3;
+      const sCol = t.shadowColor || '#000000';
+      const sOp = typeof t.shadowOpacity === 'number' ? t.shadowOpacity / 100 : 0.7;
+      const shadowRgba = sCol.startsWith('#')
+        ? (() => {
+            const hex = sCol.replace('#', '');
+            const r = parseInt(hex.length === 3 ? hex[0] + hex[0] : hex.slice(0, 2), 16) || 0;
+            const g = parseInt(hex.length === 3 ? hex[1] + hex[1] : hex.slice(2, 4), 16) || 0;
+            const b = parseInt(hex.length === 3 ? hex[2] + hex[2] : hex.slice(4, 6), 16) || 0;
+            return `rgba(${r}, ${g}, ${b}, ${sOp})`;
+          })()
+        : sCol;
+
+      ctx.shadowColor = shadowRgba;
+      ctx.shadowBlur = Math.round(sBlur * scaleX);
       ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = Math.round(3 * scaleX);
+      ctx.shadowOffsetY = Math.round(sOffY * scaleX);
     } else {
       ctx.shadowColor = 'transparent';
       ctx.shadowBlur = 0;
@@ -678,14 +724,17 @@ export async function exportCanvasImage(
     let fill: string | CanvasGradient = t.color;
     if (t.gradientFill) {
       const preset = TEXT_GRADIENT_PRESETS.find((p) => p.id === t.gradientFill);
-      const grad = ctx.createLinearGradient(-fontSize * 2, -fontSize, fontSize * 2, fontSize);
+      const textMetrics = ctx.measureText(t.text);
+      const textHalfW = Math.max(fontSize, textMetrics.width / 2);
+      const grad = ctx.createLinearGradient(-textHalfW, -fontSize / 2, textHalfW, fontSize / 2);
       if (preset) {
         preset.colors.forEach((col, idx) =>
           grad.addColorStop(idx / (preset.colors.length - 1), col)
         );
       } else {
         grad.addColorStop(0, '#FFE066');
-        grad.addColorStop(1, '#F59E0B');
+        grad.addColorStop(0.5, '#F59E0B');
+        grad.addColorStop(1, '#D97706');
       }
       fill = grad;
     }

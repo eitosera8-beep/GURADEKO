@@ -66,6 +66,10 @@ export interface TextLayer {
   color: string;
   fontWeight?: '400' | '700' | '900';
   hasShadow?: boolean;
+  shadowBlur?: number;      // 影のぼかし (0 - 30px)
+  shadowOffsetY?: number;   // 影の距離・Yオフセット (-20 - 30px)
+  shadowColor?: string;     // 影の色 ('#000000', etc.)
+  shadowOpacity?: number;   // 影の不透明度 (0 - 100%)
   x: number;          // Position inside the canvas box
   y: number;
 
